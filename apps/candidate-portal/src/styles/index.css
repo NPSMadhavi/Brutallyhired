@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand: 47 91 234;
+  --brand-fg: 255 255 255;
+}
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply font-sans text-ink; }
+  h1, h2, h3, h4 { @apply font-display tracking-tight text-ink; }
+  :focus-visible { outline: 2px solid rgb(var(--brand)); outline-offset: 2px; }
+}
+
+@layer components {
+  .card { @apply rounded-xl2 border border-line bg-white p-6 shadow-card; }
+  .label-caps { @apply text-xs font-semibold uppercase tracking-wider text-ink-muted; }
+  .page { @apply mx-auto w-full max-w-page px-5 md:px-8; }
+}
+
+/* Journey track connector lines */
+.track-item::after {
+  content: "";
+  position: absolute;
+  top: 19px;
+  left: 50px;
+  right: 10px;
+  height: 3px;
+  border-radius: 3px;
+  background: #E4E9F0;
+}
+.track-item:last-child::after { display: none; }
+.track-item[data-state="done"]::after { background: #0F9D8A; }

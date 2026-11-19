@@ -1,0 +1,118 @@
+{
+  "layout": {
+    "footer": "You’re receiving this because you applied through {{tenant}}’s candidate portal.",
+    "button": "Open the candidate portal",
+    "platform": "Brutallyhired"
+  },
+  "login_code": {
+    "subject": "Your sign-in code: {{code}}",
+    "heading": "Your sign-in code",
+    "body": "Use this code to sign in. It expires in {{minutes}} minutes. If you didn’t ask for it, you can ignore this email.",
+    "highlight": "{{code}}"
+  },
+  "application_submitted": {
+    "subject": "We’ve received your application — {{jobTitle}}",
+    "heading": "Application received",
+    "body": "Thanks for applying for {{jobTitle}}. Your reference is {{reference}}. A person will review your application, and you can follow every step in the portal."
+  },
+  "review_started": {
+    "subject": "Your application is being reviewed — {{jobTitle}}",
+    "heading": "Your application is being reviewed",
+    "body": "A recruiter has started reviewing your application for {{jobTitle}}."
+  },
+  "assessment_invited": {
+    "subject": "Assessment ready — {{jobTitle}}",
+    "heading": "Your assessment is ready",
+    "body": "Please complete “{{assessmentTitle}}” for {{jobTitle}} before {{dueAt}}. It takes {{durationMinutes}} minutes once you start."
+  },
+  "assessment_submitted": {
+    "subject": "Assessment received — {{jobTitle}}",
+    "heading": "Assessment received",
+    "body": "Thanks — your assessment for {{jobTitle}} has been submitted. The hiring team will review it."
+  },
+  "interview_invited": {
+    "subject": "Please book your interview — {{jobTitle}}",
+    "heading": "You’re invited to an interview",
+    "body": "The hiring team would like to meet you for “{{roundTitle}}”. Choose a time that suits you in the portal."
+  },
+  "interview_booked": {
+    "subject": "Interview confirmed — {{startsAt}}",
+    "heading": "Interview confirmed",
+    "body": "“{{roundTitle}}” is booked for {{startsAt}}. A calendar invite is attached. Join from the portal a few minutes before the start."
+  },
+  "interview_rescheduled": {
+    "subject": "Interview time changed — {{startsAt}}",
+    "heading": "Interview time changed",
+    "body": "“{{roundTitle}}” is now booked for {{startsAt}}. An updated calendar invite is attached."
+  },
+  "interview_completed": {
+    "subject": "Thanks for interviewing — {{jobTitle}}",
+    "heading": "Thanks for your time",
+    "body": "Your interview “{{roundTitle}}” is complete. We’ll let you know about next steps."
+  },
+  "offer_sent": {
+    "subject": "You have an offer from {{tenant}}",
+    "heading": "Congratulations — you have an offer",
+    "body": "We’re delighted to offer you the role of {{jobTitle}}. Please review it and reply by {{respondBy}}."
+  },
+  "offer_accepted": {
+    "subject": "Welcome to {{tenant}}",
+    "heading": "Welcome aboard",
+    "body": "Thanks for accepting your offer for {{jobTitle}}. Your next step is onboarding — upload a few documents in the portal."
+  },
+  "offer_declined": {
+    "subject": "Offer declined — {{jobTitle}}",
+    "heading": "We’ve recorded your decision",
+    "body": "You’ve declined the offer for {{jobTitle}}. Thank you for your time with us."
+  },
+  "onboarding_started": {
+    "subject": "Your onboarding checklist — {{jobTitle}}",
+    "heading": "Let’s get you ready",
+    "body": "Your onboarding checklist for {{jobTitle}} is ready in the portal."
+  },
+  "onboarding_document_verified": {
+    "subject": "Document verified — {{taskTitle}}",
+    "heading": "Document verified",
+    "body": "“{{taskTitle}}” has been verified."
+  },
+  "onboarding_document_rejected": {
+    "subject": "Please re-upload — {{taskTitle}}",
+    "heading": "A document needs another look",
+    "body": "We couldn’t accept “{{taskTitle}}”. Note from the team: {{note}}"
+  },
+  "joining_details_shared": {
+    "subject": "Your first day — {{startDate}}",
+    "heading": "Your first-day details",
+    "body": "Your first day is {{startDate}} at {{location}}. Full details are in the portal."
+  },
+  "application_withdrawn": {
+    "subject": "Application withdrawn — {{jobTitle}}",
+    "heading": "Application withdrawn",
+    "body": "You’ve withdrawn your application for {{jobTitle}}."
+  },
+  "application_closed": {
+    "subject": "An update on your application — {{jobTitle}}",
+    "heading": "An update on your application",
+    "body": "Thank you for your interest in {{jobTitle}}. After careful consideration, the team won’t be moving forward with your application this time."
+  },
+  "hired": {
+    "subject": "Welcome to the team",
+    "heading": "Welcome to the team",
+    "body": "Everything’s ready for your first day as {{jobTitle}}."
+  },
+  "staff_reschedule_request": {
+    "subject": "Reschedule request — {{candidateName}}",
+    "heading": "A candidate asked for other times",
+    "body": "{{candidateName}} asked for different times for “{{roundTitle}}”: {{message}}"
+  },
+  "staff_offer_declined": {
+    "subject": "Offer declined — {{candidateName}}",
+    "heading": "Offer declined",
+    "body": "{{candidateName}} declined the offer for {{jobTitle}}. Reason: {{reason}}"
+  },
+  "staff_invited": {
+    "subject": "You’ve been added to {{tenant}} on Brutallyhired",
+    "heading": "You’ve been added to the hiring team",
+    "body": "Sign in with this email address to access {{tenant}}’s hiring workspace."
+  }
+}

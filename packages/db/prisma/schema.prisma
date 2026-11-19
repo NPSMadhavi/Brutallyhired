@@ -1,0 +1,671 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Tenancy ───────────────────────────
+
+/// A hiring company that plugs Verity into its careers site.
+model Tenant {
+  id                   String   @id @default(cuid())
+  slug                 String   @unique
+  name                 String
+  logoUrl              String?
+  /// Hex colour used for the tenant's buttons and accents.
+  brandColor           String   @default("#2F5BEA")
+  careersUrl           String?
+  privacyNoticeUrl     String?
+  termsUrl             String?
+  supportEmail         String?
+  /// IANA zone used to show interview times (candidates can override in their browser).
+  timezone             String   @default("UTC")
+  /// Scores below this trigger an eligibility review by a person — never an automatic rejection.
+  eligibilityThreshold Int      @default(60)
+  talentPoolMonths     Int      @default(12)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  staff               StaffMembership[]
+  jobs                Job[]
+  profiles            CandidateProfile[]
+  applications        Application[]
+  files               FileObject[]
+  notifications       Notification[]
+  assessmentTemplates AssessmentTemplate[]
+  onboardingTemplate  OnboardingTemplateItem[]
+}
+
+// ─────────────────────────── Identity ───────────────────────────
+
+enum AuthProvider {
+  GOOGLE
+  MICROSOFT
+  LINKEDIN
+  EMAIL
+}
+
+model User {
+  id              String    @id @default(cuid())
+  /// Lower-cased. One account per email (deduplication).
+  email           String    @unique
+  emailVerifiedAt DateTime?
+  displayName     String?
+  locale          String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  identities    Identity[]
+  sessions      Session[]
+  staff         StaffMembership[]
+  profiles      CandidateProfile[]
+  applications  Application[]       @relation("candidate")
+  recruiting    Application[]       @relation("recruiter")
+  notifications Notification[]
+  files         FileObject[]
+}
+
+model Identity {
+  id         String       @id @default(cuid())
+  userId     String
+  provider   AuthProvider
+  /// OIDC `sub`, or the email address for EMAIL identities.
+  subject    String
+  email      String?
+  createdAt  DateTime     @default(now())
+  lastUsedAt DateTime     @default(now())
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@index([userId])
+}
+
+model Session {
+  /// SHA-256 of the opaque cookie token; the raw token is never stored.
+  id        String   @id
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  userAgent String?
+  ip        String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EmailCode {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
+}
+
+/// Transient OIDC state (CSRF state, nonce, PKCE verifier).
+model AuthFlow {
+  id           String       @id
+  provider     AuthProvider
+  nonce        String
+  codeVerifier String?
+  returnTo     String
+  /// When set, a successful login links this provider to the signed-in user.
+  linkUserId   String?
+  createdAt    DateTime     @default(now())
+  expiresAt    DateTime
+}
+
+enum LinkIntentKind {
+  /// Email matches an existing account: the owner must sign in with an existing method and confirm.
+  LINK_EXISTING
+  /// Provider did not vouch for the email: the person must prove it with an emailed code first.
+  VERIFY_EMAIL
+}
+
+/// A sign-in that cannot complete on its own. Never auto-merges accounts.
+model LinkIntent {
+  id         String         @id @default(cuid())
+  kind       LinkIntentKind
+  provider   AuthProvider
+  subject    String
+  email      String
+  returnTo   String
+  createdAt  DateTime     @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+}
+
+enum StaffRole {
+  ADMIN
+  RECRUITER
+  INTERVIEWER
+}
+
+model StaffMembership {
+  id        String    @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      StaffRole
+  title     String?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+}
+
+// ─────────────────────────── Jobs ───────────────────────────
+
+enum JobStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+model Job {
+  id                   String              @id @default(cuid())
+  tenantId             String
+  /// The id the company's careers site uses in its Apply link.
+  externalRef          String
+  title                String
+  department           String?
+  location             String
+  employmentType       String
+  workplaceType        String?
+  experienceText       String?
+  summary              String
+  status               JobStatus           @default(DRAFT)
+  /// Bumped whenever requirements change; stored on applications and scores.
+  version              Int                 @default(1)
+  assessmentTemplateId String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assessmentTemplate   AssessmentTemplate? @relation(fields: [assessmentTemplateId], references: [id])
+  requirements         JobRequirement[]
+  questions            JobQuestion[]
+  applications         Application[]
+
+  @@unique([tenantId, externalRef])
+}
+
+enum RequirementKind {
+  HARD
+  PREFERRED
+}
+
+model JobRequirement {
+  id       String          @id @default(cuid())
+  jobId    String
+  label    String
+  kind     RequirementKind
+  /// Terms that count as evidence for this requirement.
+  keywords String[]
+  weight   Int             @default(1)
+  order    Int             @default(0)
+  job      Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+enum QuestionType {
+  TEXT
+  SINGLE_CHOICE
+  NUMBER
+}
+
+model JobQuestion {
+  id       String              @id @default(cuid())
+  jobId    String
+  prompt   String
+  helpText String?
+  type     QuestionType
+  options  String[]
+  required Boolean             @default(true)
+  order    Int                 @default(0)
+  job      Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  answers  ApplicationAnswer[]
+}
+
+// ─────────────────────────── Candidates ───────────────────────────
+
+enum ExperienceBand {
+  LT_2
+  Y2_5
+  Y6_10
+  GT_10
+}
+
+enum NoticePeriod {
+  IMMEDIATE
+  D15
+  D30
+  D60
+  D90
+  OVER_90
+}
+
+/// Per-company candidate details. Each company only ever sees its own copy.
+model CandidateProfile {
+  id           String          @id @default(cuid())
+  userId       String
+  tenantId     String
+  firstName    String
+  lastName     String
+  phone        String?
+  city         String?
+  experience   ExperienceBand?
+  noticePeriod NoticePeriod?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+}
+
+enum FilePurpose {
+  RESUME
+  COVER_LETTER
+  ONBOARDING_DOCUMENT
+  OFFER_LETTER
+  PROCTOR_RECORDING
+}
+
+model FileObject {
+  id           String      @id @default(cuid())
+  tenantId     String
+  ownerUserId  String?
+  purpose      FilePurpose
+  storageKey   String      @unique
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  createdAt    DateTime    @default(now())
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?       @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+}
+
+// ─────────────────────────── Applications ───────────────────────────
+
+enum ApplicationStage {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  ASSESSMENT
+  INTERVIEW
+  OFFER
+  ONBOARDING
+  HIRED
+  NOT_SELECTED
+  WITHDRAWN
+}
+
+model Application {
+  id                String           @id @default(cuid())
+  /// Human-friendly reference shown to the candidate.
+  reference         String           @unique
+  tenantId          String
+  jobId             String
+  userId            String
+  recruiterUserId   String?
+  stage             ApplicationStage @default(DRAFT)
+  jobVersion        Int
+  resumeFileId      String?
+  /// Structured read of the CV (AI or candidate-corrected). Shown to the candidate.
+  /// NONE | READING | READ | UNAVAILABLE
+  resumeReadStatus  String           @default("NONE")
+  resumeSummary     Json?
+  resumeText        String?
+  coverLetterText   String?
+  coverLetterFileId String?
+  consentAccuracy   Boolean          @default(false)
+  consentPrivacy    Boolean          @default(false)
+  talentPoolUntil   DateTime?
+  submittedAt       DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job               Job              @relation(fields: [jobId], references: [id])
+  user              User             @relation("candidate", fields: [userId], references: [id], onDelete: Cascade)
+  recruiter         User?            @relation("recruiter", fields: [recruiterUserId], references: [id], onDelete: SetNull)
+
+  answers             ApplicationAnswer[]
+  events              ApplicationEvent[]
+  scores              ApplicationScore[]
+  overrides           EligibilityOverride[]
+  assessmentInvites   AssessmentInvite[]
+  interviewRounds     InterviewRound[]
+  offer               Offer?
+  onboardingTasks     OnboardingTask[]
+  joiningDetails      JoiningDetails?
+  notifications       Notification[]
+
+  @@unique([jobId, userId])
+  @@index([tenantId, stage])
+}
+
+model ApplicationAnswer {
+  id            String      @id @default(cuid())
+  applicationId String
+  questionId    String
+  value         Json
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  question      JobQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, questionId])
+}
+
+enum EventVisibility {
+  PUBLIC
+  INTERNAL
+}
+
+/// Audit trail. Only PUBLIC events ever reach the candidate.
+model ApplicationEvent {
+  id            String          @id @default(cuid())
+  applicationId String
+  type          String
+  visibility    EventVisibility
+  data          Json?
+  actorUserId   String?
+  createdAt     DateTime        @default(now())
+  application   Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+}
+
+/// Internal only (BrutalScore™). Never selected by candidate-facing queries.
+model ApplicationScore {
+  id                 String      @id @default(cuid())
+  applicationId      String
+  total              Float
+  breakdown          Json
+  confidence         Float
+  missingInformation String[]
+  jobVersion         Int
+  rubricVersion      String
+  modelVersion       String?
+  belowThreshold     Boolean
+  createdAt          DateTime    @default(now())
+  application        Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+}
+
+enum OverrideDecision {
+  ADVANCE
+  HOLD
+  NOT_SELECTED
+}
+
+model EligibilityOverride {
+  id            String           @id @default(cuid())
+  applicationId String
+  staffUserId   String
+  decision      OverrideDecision
+  reason        String
+  createdAt     DateTime         @default(now())
+  application   Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────── Assessments ───────────────────────────
+
+enum AssessmentQuestionType {
+  SINGLE_CHOICE
+  MULTI_CHOICE
+  TEXT
+}
+
+model AssessmentTemplate {
+  id              String               @id @default(cuid())
+  tenantId        String
+  title           String
+  description     String?
+  durationMinutes Int
+  proctored       Boolean              @default(true)
+  topics          String[]
+  createdAt       DateTime             @default(now())
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  questions       AssessmentQuestion[]
+  invites         AssessmentInvite[]
+  jobs            Job[]
+}
+
+model AssessmentQuestion {
+  id         String                 @id @default(cuid())
+  templateId String
+  order      Int
+  type       AssessmentQuestionType
+  prompt     String
+  options    String[]
+  /// Internal: indexes of correct options. Never sent to candidates.
+  correct    Int[]
+  points     Int                    @default(1)
+  template   AssessmentTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+enum InviteStatus {
+  INVITED
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+  CANCELLED
+}
+
+model AssessmentInvite {
+  id            String             @id @default(cuid())
+  applicationId String
+  templateId    String
+  dueAt         DateTime
+  status        InviteStatus       @default(INVITED)
+  createdAt     DateTime           @default(now())
+  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  template      AssessmentTemplate @relation(fields: [templateId], references: [id])
+  attempt       AssessmentAttempt?
+}
+
+model AssessmentAttempt {
+  id          String              @id @default(cuid())
+  inviteId    String              @unique
+  startedAt   DateTime            @default(now())
+  deadlineAt  DateTime
+  submittedAt DateTime?
+  answers     Json?
+  /// Internal.
+  autoScore   Float?
+  invite      AssessmentInvite    @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  events      ProctoringEvent[]
+  chunks      ProctoringChunk[]
+}
+
+/// Internal only.
+model ProctoringEvent {
+  id        String            @id @default(cuid())
+  attemptId String
+  type      String
+  at        DateTime
+  detail    Json?
+  attempt   AssessmentAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId, at])
+}
+
+enum CaptureKind {
+  CAMERA
+  SCREEN
+}
+
+/// Internal only.
+model ProctoringChunk {
+  id        String            @id @default(cuid())
+  attemptId String
+  kind      CaptureKind
+  seq       Int
+  fileId    String
+  createdAt DateTime          @default(now())
+  attempt   AssessmentAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, kind, seq])
+}
+
+// ─────────────────────────── Interviews ───────────────────────────
+
+enum InterviewStatus {
+  AWAITING_BOOKING
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model InterviewRound {
+  id              String              @id @default(cuid())
+  applicationId   String
+  sequence        Int
+  title           String
+  description     String?
+  preparation     String?
+  durationMinutes Int
+  status          InterviewStatus     @default(AWAITING_BOOKING)
+  bookByAt        DateTime?
+  scheduledStart  DateTime?
+  scheduledEnd    DateTime?
+  roomName        String              @unique
+  createdAt       DateTime            @default(now())
+  application     Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  panelists       InterviewPanelist[]
+  slots           InterviewSlot[]
+  rescheduleAsks  RescheduleRequest[]
+
+  @@index([applicationId, sequence])
+}
+
+model InterviewPanelist {
+  id          String         @id @default(cuid())
+  roundId     String
+  name        String
+  title       String?
+  staffUserId String?
+  round       InterviewRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+}
+
+model InterviewSlot {
+  id       String         @id @default(cuid())
+  roundId  String
+  startsAt DateTime
+  endsAt   DateTime
+  bookedAt DateTime?
+  round    InterviewRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, startsAt])
+}
+
+model RescheduleRequest {
+  id        String         @id @default(cuid())
+  roundId   String
+  message   String
+  createdAt DateTime       @default(now())
+  round     InterviewRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────── Offer & onboarding ───────────────────────────
+
+enum OfferStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+  EXPIRED
+}
+
+model Offer {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  status        OfferStatus @default(DRAFT)
+  /// Ordered list of { label, value } written by the hiring team.
+  terms         Json
+  message       String?
+  letterFileId  String?
+  respondBy     DateTime
+  sentAt        DateTime?
+  respondedAt   DateTime?
+  signatureName String?
+  signatureIp   String?
+  declineReason String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model OnboardingTemplateItem {
+  id          String  @id @default(cuid())
+  tenantId    String
+  title       String
+  description String?
+  required    Boolean @default(true)
+  order       Int     @default(0)
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+enum OnboardingTaskStatus {
+  PENDING
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+model OnboardingTask {
+  id            String               @id @default(cuid())
+  applicationId String
+  title         String
+  description   String?
+  required      Boolean              @default(true)
+  order         Int                  @default(0)
+  status        OnboardingTaskStatus @default(PENDING)
+  fileId        String?
+  /// Shown to the candidate when a document is rejected.
+  reviewerNote  String?
+  submittedAt   DateTime?
+  reviewedAt    DateTime?
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model JoiningDetails {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  startDate     DateTime
+  arrivalTime   String?
+  location      String
+  contactName   String?
+  contactTitle  String?
+  whatToBring   String?
+  notes         String?
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────── Notifications ───────────────────────────
+
+model Notification {
+  id            String       @id @default(cuid())
+  userId        String
+  tenantId      String
+  applicationId String?
+  /// Message key; text is rendered by the client in the user's language.
+  type          String
+  data          Json?
+  readAt        DateTime?
+  createdAt     DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, tenantId, createdAt])
+}

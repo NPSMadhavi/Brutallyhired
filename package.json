@@ -1,0 +1,28 @@
+{
+  "name": "verity",
+  "private": true,
+  "engines": {
+    "node": ">=20.11"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,candidate -c blue,green \"npm run dev:backend\" \"npm run dev:candidate\"",
+    "dev:backend": "npm run dev --workspace=@verity/backend",
+    "dev:candidate": "npm run dev --workspace=@verity/candidate-portal",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run generate --workspace=@verity/db",
+    "db:migrate": "npm run migrate:dev --workspace=@verity/db --",
+    "db:deploy": "npm run migrate:deploy --workspace=@verity/db",
+    "db:studio": "npm run studio --workspace=@verity/db",
+    "tenant:create": "npm run tenant:create --workspace=@verity/backend --",
+    "infra:up": "docker compose up -d"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "~5.6.3"
+  }
+}

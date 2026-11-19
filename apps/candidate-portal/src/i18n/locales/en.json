@@ -1,0 +1,668 @@
+{
+  "common": {
+    "appName": "Brutallyhired",
+    "poweredBy": "Powered by Brutallyhired",
+    
+    "loading": "Loading…",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "cancel": "Cancel",
+    "back": "Back",
+    "continue": "Continue",
+    "edit": "Edit",
+    "remove": "Remove",
+    "replace": "Replace",
+    "upload": "Upload",
+    "download": "Download",
+    "retry": "Try again",
+    "close": "Close",
+    "signOut": "Sign out",
+    "optional": "Optional",
+    "required": "Required",
+    "seeAll": "See all",
+    "backToOverview": "Back to overview",
+    "draftSaved": "Draft saved",
+    "saveAndExit": "Save and exit",
+    "privacyNotice": "Hiring privacy notice",
+    "terms": "Candidate terms",
+    "help": "Help",
+    "copyright": "© {{year}} {{tenant}}",
+    "notifications": "Notifications",
+    "notificationsUnread": "Notifications, {{count}} unread",
+    "myProfile": "My profile",
+    "verified": "Verified",
+    "dismiss": "Dismiss",
+    "today": "Today"
+  },
+  "nav": {
+    "main": "Main",
+    "overview": "Overview",
+    "assessment": "Assessment",
+    "interviews": "Interviews",
+    "offer": "Offer",
+    "onboarding": "Onboarding",
+    "applications": "My applications",
+    "locked": "{{section}} — not available yet"
+  },
+  "root": {
+    "title": "Candidate portal",
+    "body": "Open the Apply link on a company’s careers page to start an application, or use the link in any email we’ve sent you."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The link may be out of date.",
+    "home": "Go to my applications"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "We couldn’t reach the server. Check your connection and try again.",
+    "unauthenticated": "Please sign in to continue.",
+    "forbidden": "You don’t have access to this.",
+    "tenant_not_found": "We couldn’t find this company’s portal.",
+    "job_not_found": "This role isn’t open for applications.",
+    "job_closed": "This role is no longer accepting applications.",
+    "application_not_found": "We couldn’t find this application.",
+    "already_submitted": "This application has already been submitted.",
+    "validation_failed": "Please check the highlighted fields.",
+    "file_required": "Please choose a file.",
+    "file_too_large": "That file is too large.",
+    "file_type_not_allowed": "That file type isn’t supported.",
+    "payload_too_large": "That’s too large to upload.",
+    "code_incorrect": "That code isn’t right. Check it and try again.",
+    "code_invalid_or_expired": "That code has expired or been used. Request a new one.",
+    "login_expired": "Your sign-in took too long. Please try again.",
+    "provider_denied": "Sign-in was cancelled.",
+    "provider_unavailable": "That sign-in service isn’t responding. Try another method.",
+    "login_failed": "We couldn’t sign you in. Please try again.",
+    "identity_in_use": "That sign-in is already linked to a different account.",
+    "email_required": "Your provider didn’t share an email address. Please use another sign-in method.",
+    "last_sign_in_method": "You need to keep at least one way to sign in.",
+    "intent_not_found": "This link has expired. Please sign in again.",
+    "intent_belongs_to_other_account": "You’re signed in to a different account.",
+    "slot_unavailable": "That time was just taken. Please pick another.",
+    "too_late_to_change": "It’s too close to the start to change the time. Ask your recruiter instead.",
+    "interview_not_bookable": "This interview can’t be booked right now.",
+    "join_not_open_yet": "You can join a few minutes before the start time.",
+    "join_window_closed": "This interview has ended.",
+    "time_up": "Time is up for this assessment.",
+    "attempt_submitted": "This assessment has already been submitted.",
+    "assessment_expired": "This assessment has closed.",
+    "assessment_submitted": "This assessment has already been submitted.",
+    "onboarding_locked": "Onboarding opens when you accept your offer.",
+    "offer_not_found": "There’s no offer to show yet.",
+    "offer_expired": "This offer has expired.",
+    "application_incomplete": "A few things are missing before you can submit.",
+    "email_not_verified": "Please confirm your email address first.",
+    "cannot_withdraw": "This application can’t be withdrawn now.",
+    "csrf_header_missing": "Your session needs refreshing. Reload the page and try again.",
+    "route_not_found": "That page doesn’t exist."
+  },
+  "providers": {
+    "GOOGLE": "Google",
+    "MICROSOFT": "Microsoft",
+    "LINKEDIN": "LinkedIn",
+    "EMAIL": "Email code"
+  },
+  "auth": {
+    "titleApply": "Sign in to apply",
+    "titlePortal": "Sign in to apply",
+    "subtitle": "New here? The same buttons create your account. Use one method every time so your application stays in one place.",
+    "continueWith": "Continue with {{provider}}",
+    "orEmail": "or with your email",
+    "emailLabel": "Email address",
+    "sendCode": "Send code",
+    "codeHint": "We’ll send a 6-digit code to verify it’s you. No password needed.",
+    "codeLabel": "6-digit code",
+    "codeSent": "We sent a code to {{email}}.",
+    "verify": "Verify and continue",
+    "useDifferentEmail": "Use a different email",
+    "resend": "Resend code",
+    "resent": "A new code is on its way.",
+    "oneAccount": "One person, one account. If your email already has a profile, we’ll sign you in to it and ask before linking a new sign-in method.",
+    "applyingFor": "YOU'RE APPLYING FOR",
+    "whatNext": "What happens next",
+    "next1": "A few details about you",
+    "next2": "Upload your CV, and a cover letter if you like",
+    "next3": "Check and submit — about 5 minutes",
+    "trackAfter": "After you apply, sign in here any time to follow your application.",
+    "agree": "By continuing you agree to the",
+    "and": "and the"
+  },
+  "authError": {
+    "title": "We couldn’t sign you in",
+    "tryAgain": "Try again"
+  },
+  "link": {
+    "title": "Link your {{provider}} sign-in",
+    "body": "An account already exists for {{email}}. To keep everything in one place, sign in with a method you’ve used before, then confirm the link.",
+    "signInWith": "Sign in with {{provider}}",
+    "confirmTitle": "Confirm the link",
+    "confirmBody": "Add {{provider}} as a way to sign in to {{email}}?",
+    "confirm": "Link {{provider}}",
+    "wrongAccount": "You’re signed in as {{current}}. Sign out, then sign in as {{email}} to link.",
+    "linked": "Linked. You can now sign in with {{provider}}."
+  },
+  "verifyEmail": {
+    "title": "Confirm your email",
+    "body": "{{provider}} didn’t confirm {{email}} for us. We’ll email you a code to finish signing in.",
+    "send": "Send code"
+  },
+  "apply": {
+    "stepOf": "Step {{n}} of {{total}}",
+    "stepsLabel": "Application steps",
+    "steps": {
+      "details": "Your details",
+      "resume": "Resume",
+      "questions": "Questions",
+      "review": "Review"
+    },
+    "applyingFor": "Applying for",
+    "viewJob": "View job description",
+    "privacy": "We only ask what the hiring team needs. We never ask for — or try to work out — your age, gender, religion, caste or other protected traits.",
+    "starting": "Starting your application…",
+    "details": {
+      "title": "Tell us about you",
+      "signedInAs": "Signed in as {{email}}. Please check your details.",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Mobile number",
+      "phoneHint": "Used for interview reminders only",
+      "city": "Current city",
+      "experience": "Total work experience",
+      "notice": "Notice period",
+      "select": "Select…",
+      "note": "That’s all we need here. Your skills, education and work history come from your CV.",
+      "next": "Continue to resume"
+    },
+    "resume": {
+      "title": "Add your resume",
+      "cvTitle": "Resume / CV",
+      "drop": "Drag your file here, or",
+      "browse": "choose a file",
+      "formats": "PDF, DOC, DOCX or RTF, up to {{mb}} MB",
+      "uploading": "Uploading…",
+      "uploaded": "Uploaded {{date}}",
+      "reading": "Reading your CV…",
+      "readTitle": "Here’s what we read from your CV",
+      "readBody": "The hiring team sees this summary next to your CV. Fix anything we got wrong.",
+      "unavailableTitle": "Add your key details",
+      "unavailableBody": "We couldn’t read your CV automatically. Add your key skills so the hiring team sees them.",
+      "currentRole": "Current role",
+      "totalExperience": "Experience",
+      "education": "Education",
+      "skills": "Skills",
+      "certifications": "Certifications",
+      "nothing": "Nothing found",
+      "itemPlaceholder": "Type and press Enter",
+      "add": "Add",
+      "removeItem": "Remove {{item}}",
+      "coverTitle": "Cover letter",
+      "coverHint": "A few lines on why this role — or anything your CV doesn’t show.",
+      "coverFormat": "Cover letter format",
+      "writeIt": "Write it here",
+      "uploadIt": "Upload a file",
+      "coverLabel": "Your cover letter",
+      "chars": "{{count}} / {{max}} characters",
+      "next": "Continue",
+      "howUsed": "How your CV is used",
+      "used1": "AI matches your experience to the role’s requirements, so reviewers see the evidence.",
+      "used2": "A recruiter reviews every application. Nothing is rejected automatically.",
+      "used3": "We ignore photos, age, gender and other personal traits.",
+      "required": "Upload your resume to continue."
+    },
+    "questions": {
+      "title": "A few questions from the hiring team",
+      "choose": "Choose one",
+      "next": "Continue to review"
+    },
+    "review": {
+      "title": "Check and submit",
+      "details": "Your details",
+      "docs": "Resume and cover letter",
+      "answers": "Your answers",
+      "noCover": "Not added · optional",
+      "coverWritten": "Written in the portal",
+      "addCover": "Add one",
+      "before": "Before you submit",
+      "consentAccuracy": "The information I’ve given is accurate, and I understand it will be checked.",
+      "consentPrivacy": "I’ve read the hiring privacy notice, including how AI helps organise my application.",
+      "talentPool": "Keep my profile for other {{tenant}} roles for {{months}} months.",
+      "submit": "Submit application",
+      "afterTitle": "After you submit",
+      "after1Title": "Instant confirmation",
+      "after1Body": "By email, with a link to track progress",
+      "after2Title": "Recruiter review",
+      "after2Body": "A person reads every application",
+      "after3Title": "Updates at every step",
+      "after3Body": "Here, and by email",
+      "incomplete": "Please complete: {{items}}",
+      "sections": {
+        "profile": "your details",
+        "resume": "your resume",
+        "answers": "the questions"
+      },
+      "notAnswered": "Not answered"
+    },
+    "submitted": {
+      "title": "Application sent",
+      "body": "Your application for {{job}} is with the {{tenant}} hiring team.",
+      "reference": "Reference {{reference}}",
+      "nextTitle": "What happens next",
+      "n1Title": "A recruiter reviews it",
+      "n1Body": "A person reads every application.",
+      "n2Title": "You may get an assessment",
+      "n2Body": "If the role needs one, you’ll take it online.",
+      "n3Title": "You pick interview times",
+      "n3Body": "Book slots, join video calls and get your offer — all in this portal.",
+      "emailNote": "We’ll email you whenever something changes. You can also sign in any time to see where things stand.",
+      "track": "Track my application",
+      "backToCareers": "Back to careers"
+    }
+  },
+  "experience": {
+    "LT_2": "Less than 2 years",
+    "Y2_5": "2–5 years",
+    "Y6_10": "6–10 years",
+    "GT_10": "More than 10 years"
+  },
+  "notice": {
+    "IMMEDIATE": "Immediate",
+    "D15": "15 days",
+    "D30": "30 days",
+    "D60": "60 days",
+    "D90": "90 days",
+    "OVER_90": "More than 90 days"
+  },
+  "stage": {
+    "DRAFT": "Draft",
+    "SUBMITTED": "Submitted",
+    "IN_REVIEW": "In review",
+    "ASSESSMENT": "Assessment",
+    "INTERVIEW": "Interviews",
+    "OFFER": "Offer",
+    "ONBOARDING": "Onboarding",
+    "HIRED": "Hired",
+    "NOT_SELECTED": "Closed",
+    "WITHDRAWN": "Withdrawn"
+  },
+  "milestone": {
+    "APPLIED": "Applied",
+    "IN_REVIEW": "In review",
+    "ASSESSMENT": "Assessment",
+    "INTERVIEWS": "Interviews",
+    "OFFER": "Offer",
+    "ONBOARDING": "Onboarding",
+    "FIRST_DAY": "First day"
+  },
+  "applications": {
+    "title": "My applications",
+    "empty": "You haven’t applied for a role here yet.",
+    "applied": "Applied {{date}}",
+    "draft": "Not submitted yet",
+    "continue": "Continue application",
+    "open": "Open"
+  },
+  "overview": {
+    "greeting": "Hi {{name}}",
+    "greetingFallback": "Welcome back",
+    "yourApplication": "Your application · {{reference}}",
+    "appliedOn": "Applied {{date}}",
+    "nextStep": "Your next step",
+    "updates": "Updates",
+    "newestFirst": "Newest first",
+    "noUpdates": "No updates yet.",
+    "recruiter": "Your recruiter",
+    "emailRecruiter": "Email {{name}}",
+    "transparencyTitle": "What you’ll see here",
+    "t1": "Every milestone, the moment it happens",
+    "t2": "What you need to do next, and by when",
+    "t3": "Scores, interviewer notes and proctoring reviews stay with the hiring team",
+    "fair": "People make every decision. Nothing is rejected automatically.",
+    "withdraw": "Withdraw application",
+    "withdrawConfirm": "Withdraw your application? The hiring team will be told, and you can’t undo this here.",
+    "withdrawYes": "Yes, withdraw",
+    "progressLabel": "Application progress"
+  },
+  "next": {
+    "COMPLETE_APPLICATION": {
+      "title": "Finish your application",
+      "body": "You haven’t submitted it yet.",
+      "cta": "Continue"
+    },
+    "AWAIT_REVIEW": {
+      "title": "A recruiter is reviewing your application",
+      "body": "We’ll let you know as soon as there’s news. Nothing is rejected automatically."
+    },
+    "TAKE_ASSESSMENT": {
+      "title": "Complete “{{title}}”",
+      "body": "{{minutes}} minutes once you start. Closes {{due}}.",
+      "cta": "Start assessment"
+    },
+    "AWAIT_ASSESSMENT_REVIEW": {
+      "title": "Assessment submitted",
+      "body": "The hiring team is reviewing it. We’ll be in touch about next steps."
+    },
+    "BOOK_INTERVIEW": {
+      "title": "Choose a time for “{{title}}”",
+      "body": "{{minutes}} minutes on video.",
+      "bodyBy": "{{minutes}} minutes on video. Book by {{date}}.",
+      "cta": "Pick a slot"
+    },
+    "ATTEND_INTERVIEW": {
+      "title": "{{title}}",
+      "body": "{{when}}",
+      "cta": "View details"
+    },
+    "AWAIT_DECISION": {
+      "title": "The hiring team is deciding next steps",
+      "body": "We’ll be in touch soon."
+    },
+    "RESPOND_TO_OFFER": {
+      "title": "Your offer is ready",
+      "body": "Please reply by {{date}}.",
+      "cta": "Review offer"
+    },
+    "COMPLETE_ONBOARDING": {
+      "title": "Finish your onboarding",
+      "body_one": "{{count}} item still needed.",
+      "body_other": "{{count}} items still needed.",
+      "cta": "Go to onboarding"
+    },
+    "READY_TO_START": {
+      "title": "You’re all set",
+      "body": "Your first day is {{date}}.",
+      "bodyNoDate": "We’ll share your first-day details soon.",
+      "cta": "View details"
+    },
+    "CLOSED": {
+      "WITHDRAWN": {
+        "title": "You withdrew this application",
+        "body": "Thanks for your interest."
+      },
+      "NOT_SELECTED": {
+        "title": "This application is closed",
+        "body": "Thank you for applying. The team won’t be moving forward this time."
+      },
+      "OFFER_DECLINED": {
+        "title": "You declined the offer",
+        "body": "Thanks for letting us know."
+      }
+    }
+  },
+  "events": {
+    "application_submitted": {
+      "title": "Application received",
+      "body": "Reference {{reference}}."
+    },
+    "review_started": {
+      "title": "A recruiter started reviewing your application",
+      "body": ""
+    },
+    "assessment_invited": {
+      "title": "Assessment ready",
+      "body": "{{title}} · closes {{date}}"
+    },
+    "assessment_submitted": {
+      "title": "Assessment submitted",
+      "body": "{{title}}"
+    },
+    "interview_invited": {
+      "title": "Invited to an interview",
+      "body": "{{title}}"
+    },
+    "interview_booked": {
+      "title": "Interview booked",
+      "body": "{{title}} · {{when}}"
+    },
+    "interview_rescheduled": {
+      "title": "Interview time changed",
+      "body": "{{title}} · {{when}}"
+    },
+    "interview_completed": {
+      "title": "Interview completed",
+      "body": "{{title}}"
+    },
+    "offer_sent": {
+      "title": "Offer received",
+      "body": "Reply by {{date}}"
+    },
+    "offer_accepted": {
+      "title": "Offer accepted",
+      "body": ""
+    },
+    "offer_declined": {
+      "title": "Offer declined",
+      "body": ""
+    },
+    "onboarding_started": {
+      "title": "Onboarding started",
+      "body": ""
+    },
+    "onboarding_document_verified": {
+      "title": "Document verified",
+      "body": "{{title}}"
+    },
+    "onboarding_document_rejected": {
+      "title": "A document needs another look",
+      "body": "{{title}}"
+    },
+    "joining_details_shared": {
+      "title": "First-day details shared",
+      "body": "{{date}}"
+    },
+    "application_withdrawn": {
+      "title": "Application withdrawn",
+      "body": ""
+    },
+    "application_closed": {
+      "title": "Application closed",
+      "body": ""
+    },
+    "hired": {
+      "title": "Welcome to the team",
+      "body": ""
+    }
+  },
+  "assessment": {
+    "list": "Assessments",
+    "none": "No assessments yet",
+    "noneBody": "If this role needs a technical assessment, it will appear here after screening.",
+    "closes": "Closes {{date}}",
+    "questions": "Questions",
+    "time": "Time",
+    "minutes": "{{count}} min",
+    "format": "Format",
+    "proctored": "Proctored",
+    "notProctored": "Not proctored",
+    "covers": "What it covers",
+    "checkTitle": "Quick system check",
+    "allGood": "All good",
+    "needsAttention": "Needs attention",
+    "camera": "Camera and microphone",
+    "screen": "Screen sharing",
+    "browser": "Browser support",
+    "connection": "Connection",
+    "statusOk": "Ready",
+    "statusFail": "Not available",
+    "statusPending": "Not checked",
+    "runCheck": "Run the check",
+    "runAgain": "Run the check again",
+    "consent": "I’m in a quiet place, I’ll work alone, and I understand my camera and screen are recorded for the hiring team only.",
+    "start": "Start assessment",
+    "resume": "Resume assessment",
+    "adjust": "Request an adjustment",
+    "timerNote": "The timer starts when you begin and can’t be paused.",
+    "resultNote": "Your result goes to the hiring team alongside your interviews. It isn’t shown here, and it’s never the only reason for a decision.",
+    "goodToKnow": "Good to know",
+    "tip1": "If your connection drops, reopen this page — your answers and time are saved.",
+    "tip2": "Need extra time or assistive technology? Request an adjustment before you start.",
+    "status": {
+      "INVITED": "To do",
+      "IN_PROGRESS": "In progress",
+      "SUBMITTED": "Submitted",
+      "EXPIRED": "Closed",
+      "CANCELLED": "Cancelled"
+    },
+    "timeLeft": "Time left",
+    "questionN": "Question {{n}} of {{total}}",
+    "questionNav": "Questions",
+    "prev": "Previous",
+    "next": "Next",
+    "submit": "Submit assessment",
+    "submitConfirm": "Submit now? You can’t change your answers afterwards.",
+    "unanswered_one": "{{count}} question unanswered",
+    "unanswered_other": "{{count}} questions unanswered",
+    "saved": "Answers saved",
+    "saving": "Saving…",
+    "typeAnswer": "Type your answer",
+    "chooseOne": "Choose one",
+    "chooseMany": "Choose all that apply",
+    "submittedTitle": "Assessment submitted",
+    "submittedBody": "Thanks — the hiring team will review it.",
+    "recording": "Camera and screen are being recorded for the hiring team.",
+    "returnFullscreen": "Return to full screen",
+    "shareWholeScreen": "Please share your entire screen, not a window or tab.",
+    "timeUp": "Time’s up — we’ve submitted your answers."
+  },
+  "interviews": {
+    "title": "Interviews",
+    "none": "No interviews scheduled yet",
+    "noneBody": "Once the hiring team is ready, you’ll be able to pick times that suit you here.",
+    "roundOf": "Interview {{n}} of {{total}}",
+    "duration": "{{count}} minutes",
+    "video": "Video call in this portal — no download needed",
+    "meet": "You’ll meet",
+    "prepare": "How to prepare",
+    "bookTitle": "Book “{{title}}”",
+    "bookBody": "Pick any open time. Times are shown in {{tz}}.",
+    "bookBodyBy": "Pick any open time before {{date}}. Times are shown in {{tz}}.",
+    "chooseDay": "1. Choose a day",
+    "chooseTime": "2. Choose a time",
+    "slots_one": "{{count}} slot",
+    "slots_other": "{{count}} slots",
+    "yourChoice": "Your choice",
+    "pickTime": "Pick a time",
+    "confirm": "Confirm interview",
+    "confirmChange": "Change to this time",
+    "noSlots": "There are no open times right now.",
+    "askOther": "None of these work? Ask for other times",
+    "askTitle": "Ask for other times",
+    "askLabel": "Which days and times suit you?",
+    "send": "Send request",
+    "sent": "Request sent. Your recruiter will get back to you.",
+    "booked": "You’re booked",
+    "bookedBody": "We’ve emailed a calendar invite. You can join from here {{minutes}} minutes before the start.",
+    "addCalendar": "Add to calendar",
+    "change": "Change time",
+    "open": "View",
+    "join": "Join interview",
+    "joinOpens": "You can join from {{when}}",
+    "ended": "This interview has ended.",
+    "status": {
+      "AWAITING_BOOKING": "Pick a time",
+      "SCHEDULED": "Confirmed",
+      "COMPLETED": "Completed",
+      "CANCELLED": "Cancelled"
+    },
+    "lobbyBody": "The panel will let you in when they’re ready. Check your camera and microphone below.",
+    "joinNow": "Join now",
+    "micLabel": "Microphone",
+    "camLabel": "Camera",
+    "nameLabel": "Your name",
+    "left": "You’ve left the interview.",
+    "rejoin": "Rejoin",
+    "trouble": "Can’t connect? Email your recruiter."
+  },
+  "offer": {
+    "heroLabel": "Offer · {{job}}",
+    "title": "Congratulations, {{name}}. We’d love you to join us.",
+    "titleFallback": "Congratulations. We’d love you to join us.",
+    "sub": "Take your time to read the offer. Your recruiter is happy to talk anything through.",
+    "replyBy": "Please reply by",
+    "daysLeft_one": "{{count}} day left",
+    "daysLeft_other": "{{count}} days left",
+    "glance": "The offer at a glance",
+    "letter": "Offer letter",
+    "message": "A note from the team",
+    "decision": "Your decision",
+    "decisionBody": "Accepting opens onboarding, where you’ll upload a few documents before your first day.",
+    "accept": "Accept and sign",
+    "ask": "Ask a question",
+    "decline": "Decline offer",
+    "signTitle": "Sign your offer",
+    "signLabel": "Type your full name to sign",
+    "agree": "I accept this offer on the terms set out in the offer letter.",
+    "signAccept": "Sign and accept",
+    "declineTitle": "Decline this offer?",
+    "declineBody": "The hiring team will be told straight away. If something could change your mind, talk to your recruiter first.",
+    "reason": "Reason (optional)",
+    "declineYes": "Decline offer",
+    "keep": "Keep it open",
+    "acceptedTitle": "Welcome aboard!",
+    "acceptedBody": "Signed by {{name}} on {{date}}.",
+    "startOnboarding": "Start onboarding",
+    "declinedTitle": "You’ve declined this offer",
+    "declinedBody": "Thanks for letting us know. We’ve told the hiring team.",
+    "expiredTitle": "This offer has expired",
+    "expiredBody": "Contact your recruiter if you’d still like to discuss it.",
+    "questions": "Questions about the offer?"
+  },
+  "onboarding": {
+    "title": "Your first day is {{date}}",
+    "titleNoDate": "Let’s get you ready",
+    "daysToGo_one": "{{count}} day to go.",
+    "daysToGo_other": "{{count}} days to go.",
+    "sub": "Finish the steps below so everything’s ready when you arrive.",
+    "progress": "{{done}} of {{total}} done",
+    "progressLabel": "{{done}} of {{total}} onboarding items done",
+    "remaining_one": "{{count}} still to upload",
+    "remaining_other": "{{count}} still to upload",
+    "allDone": "All documents in — nice work.",
+    "docs": "Documents",
+    "formats": "PDF, JPG or PNG · up to {{mb}} MB each",
+    "status": {
+      "PENDING": "To upload",
+      "SUBMITTED": "Checking",
+      "VERIFIED": "Verified",
+      "REJECTED": "Re-upload needed"
+    },
+    "reviewerNote": "Note from the team: {{note}}",
+    "secure": "Stored encrypted. Only HR and the verification team can see your documents.",
+    "firstDay": "Your first day",
+    "arrive": "Arrival",
+    "where": "Where",
+    "contact": "Who will meet you",
+    "bring": "What to bring",
+    "notes": "Notes",
+    "detailsSoon": "We’ll share your first-day details soon.",
+    "locked": "Onboarding opens when you accept your offer.",
+    "empty": "There’s nothing to upload yet."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "You’re all caught up.",
+    "loadMore": "Load more",
+    "markAll": "Mark all as read"
+  },
+  "profile": {
+    "title": "My profile",
+    "sub": "The details the hiring team sees with your application.",
+    "personal": "Personal details",
+    "save": "Save changes",
+    "saved": "Saved",
+    "signIn": "Sign-in methods",
+    "signInBody": "One person, one account. We only link a sign-in method when you confirm it.",
+    "linked": "Linked",
+    "link": "Link",
+    "unlink": "Remove",
+    "email": "Email"
+  },
+  "realtime": {
+    "newUpdate": "New update: {{title}}"
+  },
+  "time": {
+    "shownIn": "Times shown in {{tz}}"
+  }
+}
