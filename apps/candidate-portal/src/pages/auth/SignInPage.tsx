@@ -94,11 +94,8 @@ export function SignInPage() {
     }
   }
 
-  const defaultOidc: AuthProviderKey[] = ["GOOGLE", "MICROSOFT", "LINKEDIN"];
-  const oidc =
-    providers.data && providers.data.filter((p) => p !== "EMAIL").length > 0
-      ? providers.data.filter((p) => p !== "EMAIL")
-      : defaultOidc;
+  // Always display Google, Microsoft, and LinkedIn sign-in options
+  const oidc: AuthProviderKey[] = ["GOOGLE", "MICROSOFT", "LINKEDIN"];
 
   return (
     <div className="flex min-h-screen flex-col">

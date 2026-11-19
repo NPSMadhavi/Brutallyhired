@@ -64,7 +64,12 @@ export function ProfilePage() {
 
   const onSubmit = async (data: ProfileInput) => {
     try {
-      await save.mutateAsync(data);
+      await save.mutateAsync({
+        ...data,
+        firstName: data.firstName.trim(),
+        lastName: data.lastName.trim(),
+        city: data.city.trim(),
+      });
       setSaveSuccess(true);
       toast("Profile updated successfully");
       setTimeout(() => setSaveSuccess(false), 4000);

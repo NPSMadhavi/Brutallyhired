@@ -81,7 +81,20 @@ export function DetailsStep() {
   });
 
   return (
-    <form className="card flex flex-col gap-6 md:p-8" noValidate onSubmit={form.handleSubmit((v) => save.mutateAsync(v).then(() => navigate(nextPath("details"))))}>
+    <form
+      className="card flex flex-col gap-6 md:p-8"
+      noValidate
+      onSubmit={form.handleSubmit((v) =>
+        save
+          .mutateAsync({
+            ...v,
+            firstName: v.firstName.trim(),
+            lastName: v.lastName.trim(),
+            city: v.city.trim(),
+          })
+          .then(() => navigate(nextPath("details"))),
+      )}
+    >
       <Notice tone="info">{t("apply.details.signedInAs", { email: me.data?.email ?? "" })}</Notice>
       <Field label={t("apply.details.email")} htmlFor="email">
         <div className="relative">

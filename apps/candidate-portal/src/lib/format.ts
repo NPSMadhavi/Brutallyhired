@@ -52,7 +52,7 @@ export const initials = (name: string | null | undefined, fallback = "") => {
   }
 
   // Name with multiple words (e.g. "Sahu Pavan" -> "SP", "John Smith" -> "JS", "Rahul Kumar" -> "RK", "Priya Sharma" -> "PS")
-  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const parts = trimmed.split(" ").filter((p) => p.length > 0);
   if (parts.length >= 2) {
     return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
   }
