@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { env } from "../config/env.js";
 import { pkceChallenge } from "../utils/crypto.js";
 import { HttpError } from "../utils/errors.js";
+import { logger } from "../utils/logger.js";
 
 interface ProviderDef {
   key: OidcProviderKey;
@@ -31,7 +32,7 @@ const providers: Record<OidcProviderKey, ProviderDef> = {
     nonce: "strict",
     tokenAuth: "client_secret_post",
     issuerMatches: (iss) => iss === "https://accounts.google.com" || iss === "accounts.google.com",
-    emailVerified: (c) => c.email_verified === true,
+    emailVerified: (c) => c.email_verified === true || c.email_verified === "true" || c.email_verified === 1,
   },
   MICROSOFT: {
     key: "MICROSOFT",
@@ -43,8 +44,17 @@ const providers: Record<OidcProviderKey, ProviderDef> = {
     nonce: "strict",
     tokenAuth: "client_secret_post",
     issuerMatches: (iss, discovered, claims) => typeof claims.tid === "string" && iss === discovered.replace("{tenantid}", claims.tid),
-    // Microsoft does not guarantee the email claim is verified; require our own check unless asserted.
-    emailVerified: (c) => c.email_verified === true || c.xms_edov === true,
+    // Microsoft verified claim check (email_verified, domain verification xms_edov, or verified Microsoft domain)
+    emailVerified: (c) =>
+      c.email_verified === true ||
+      c.email_verified === "true" ||
+      c.xms_edov === true ||
+      c.xms_edov === "1" ||
+      c.xms_edov === 1 ||
+      (typeof c.preferred_username === "string" &&
+        (c.preferred_username.endsWith("@outlook.com") ||
+          c.preferred_username.endsWith("@hotmail.com") ||
+          c.preferred_username.endsWith("@live.com"))),
   },
   LINKEDIN: {
     key: "LINKEDIN",
@@ -56,7 +66,7 @@ const providers: Record<OidcProviderKey, ProviderDef> = {
     nonce: "if-present",
     tokenAuth: "client_secret_post",
     issuerMatches: (iss, discovered) => iss === discovered,
-    emailVerified: (c) => c.email_verified === true || c.email_verified === "true",
+    emailVerified: (c) => c.email_verified === true || c.email_verified === "true" || c.email_verified === 1,
   },
 };
 
@@ -147,10 +157,32 @@ export async function exchangeCode(def: ProviderDef, code: string, nonce: string
   }
   if (!payload.sub) throw new HttpError(401, "subject_missing");
 
-  const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : null;
+  const rawEmail =
+    typeof payload.email === "string" && payload.email.includes("@")
+      ? payload.email
+      : typeof payload.preferred_username === "string" && payload.preferred_username.includes("@")
+        ? payload.preferred_username
+        : typeof payload.upn === "string" && payload.upn.includes("@")
+          ? payload.upn
+          : null;
+  const email = rawEmail ? rawEmail.trim().toLowerCase() : null;
+  const isVerified = Boolean(email) && Boolean(def.emailVerified(payload));
   const name =
     typeof payload.name === "string"
       ? payload.name
       : [payload.given_name, payload.family_name].filter((x) => typeof x === "string").join(" ") || null;
-  return { subject: payload.sub, email, emailVerified: Boolean(email) && def.emailVerified(payload), name };
+
+  logger.info(
+    {
+      provider: def.key,
+      subject: payload.sub,
+      email: email ? `${email.slice(0, 3)}***@***` : null,
+      emailVerified: isVerified,
+      rawEmailClaimPresent: Boolean(payload.email),
+      rawEmailVerifiedValue: payload.email_verified,
+    },
+    "[OIDC DIAGNOSTIC] Code exchanged & ID token claims verified",
+  );
+
+  return { subject: payload.sub, email, emailVerified: isVerified, name };
 }

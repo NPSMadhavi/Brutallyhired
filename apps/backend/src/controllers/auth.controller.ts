@@ -99,11 +99,32 @@ export const oidcCallback = ah(async (req, res) => {
     if (!code) return fail("code_missing");
     const identity = await exchangeCode(def, code, flow.nonce, flow.codeVerifier);
     const outcome = await resolveOidcLogin(def.key, identity, { linkUserId: flow.linkUserId, returnTo: flow.returnTo });
+
+    logger.info(
+      {
+        provider: def.key,
+        outcomeKind: outcome.kind,
+        userId: outcome.kind === "login" ? outcome.userId : null,
+        intentId: outcome.kind === "intent" ? outcome.intentId : null,
+        intentKind: outcome.kind === "intent" ? outcome.intentKind : null,
+        returnTo: flow.returnTo,
+      },
+      "[AUTH DIAGNOSTIC] oidcCallback outcome",
+    );
+
     if (outcome.kind === "intent") {
       const path = outcome.intentKind === "LINK_EXISTING" ? "link" : "verify-email";
+      logger.info({ path, intentId: outcome.intentId }, "[AUTH DIAGNOSTIC] Redirecting to linking/verification intent screen");
       return res.redirect(webUrl(`/auth/${path}/${outcome.intentId}`));
     }
     if (!flow.linkUserId) await startSession(req, res, outcome.userId);
+    logger.info(
+      {
+        userId: outcome.userId,
+        finalRedirectUrl: webUrl(flow.returnTo),
+      },
+      "[AUTH DIAGNOSTIC] Session created -> redirecting directly to candidate destination",
+    );
     res.redirect(webUrl(flow.returnTo));
   } catch (e) {
     logger.warn({ err: e }, "oidc callback failed");
