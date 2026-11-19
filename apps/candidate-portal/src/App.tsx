@@ -4,6 +4,7 @@ import { PortalLayout } from "@/components/layout/PortalLayout";
 import { RequireAuth } from "@/components/layout/RequireAuth";
 import { TenantLayout } from "@/components/layout/TenantContext";
 import { PageLoader } from "@/components/ui/feedback";
+import { AdminDashboard } from "@/pages/admin/AdminDashboard";
 import { ApplicationsListPage } from "@/pages/applications/ApplicationsListPage";
 import { OverviewPage } from "@/pages/applications/OverviewPage";
 import { ApplyEntry } from "@/pages/apply/ApplyEntry";
@@ -33,6 +34,10 @@ const JoinPage = lazy(() => import("@/pages/interviews/JoinPage").then((m) => ({
 const router = createBrowserRouter([
   { path: "/", element: <SignInPage /> },
   { path: "/signin", element: <SignInPage /> },
+  { path: "/admin/login", element: <AdminDashboard /> },
+  { path: "/admin", element: <AdminDashboard /> },
+  { path: "/admin/*", element: <AdminDashboard /> },
+  { path: "/dashboard", element: <AdminDashboard /> },
   { path: "/auth/error", element: <AuthErrorPage /> },
   { path: "/auth/link/:intentId", element: <LinkAccountPage /> },
   { path: "/auth/verify-email/:intentId", element: <VerifyEmailPage /> },
@@ -41,6 +46,9 @@ const router = createBrowserRouter([
     element: <TenantLayout />,
     children: [
       { index: true, element: <Navigate to="applications" replace /> },
+      { path: "admin", element: <AdminDashboard /> },
+      { path: "admin/*", element: <AdminDashboard /> },
+      { path: "dashboard", element: <AdminDashboard /> },
       { path: "signin", element: <SignInPage /> },
       { path: "apply/:jobRef", element: <ApplyEntry /> },
       {

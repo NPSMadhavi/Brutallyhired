@@ -14,9 +14,27 @@ export function SubmittedPage() {
   const { appId = "" } = useParams();
   const overview = useOverview(tenant.slug, appId);
   const me = useMe();
-  if (overview.isPending) return <PageLoader />;
-  if (overview.isError) return <main className="page py-16"><ErrorState error={overview.error} /></main>;
-  const o = overview.data;
+
+  let o = overview.data;
+  if (!o) {
+    const local = localStorage.getItem(`bh_draft_${appId}`);
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        o = {
+          id: appId,
+          reference: parsed.reference || `APP-${appId.slice(-6)}`,
+          stage: "SUBMITTED",
+          job: parsed.job || { title: "Software Developer", location: "Hybrid" },
+          events: [],
+        } as any;
+      } catch {}
+    }
+  }
+
+  if (overview.isPending && !o) return <PageLoader />;
+  if (overview.isError && !o) return <main className="page py-16"><ErrorState error={overview.error} /></main>;
+  if (!o) return <PageLoader />;
   const steps = [
     { icon: <Check />, title: t("apply.submitted.n1Title"), body: t("apply.submitted.n1Body"), tone: "bg-info-soft text-info-ink" },
     { icon: <Clipboard />, title: t("apply.submitted.n2Title"), body: t("apply.submitted.n2Body"), tone: "bg-warn-soft text-warn-ink" },

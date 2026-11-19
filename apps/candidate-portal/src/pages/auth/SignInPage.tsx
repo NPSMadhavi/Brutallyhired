@@ -1,7 +1,7 @@
 import { returnToSchema, type AuthProviderKey } from "@verity/shared";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useJob, useMe, useProviders } from "@/api/hooks";
 import { BrandMark, PoweredBy } from "@/components/layout/BrandMark";
 import { Footer } from "@/components/layout/Footer";
@@ -108,11 +108,14 @@ export function SignInPage() {
       <main className="page flex flex-wrap items-start justify-center gap-8 py-14">
         <section className="card flex flex-[0_1_480px] flex-col gap-6 md:p-8" aria-labelledby="signin-h">
           <div className="flex flex-col gap-2">
+            <span className="inline-flex items-center gap-1.5 self-start rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-teal-800">
+              Candidate Portal
+            </span>
             <h1 id="signin-h" className="text-[32px] font-bold leading-tight text-ink">
-              {t("auth.titleApply")}
+              Candidate Sign In
             </h1>
             <p className="text-[15px] leading-relaxed text-ink-muted">
-              {t("auth.subtitle")}
+              Sign in to track your applications, complete proctored assessments, and review offers.
             </p>
           </div>
           <div className="flex flex-col gap-3">
@@ -154,6 +157,20 @@ export function SignInPage() {
               {tenant.privacyNoticeUrl && <a href={tenant.privacyNoticeUrl} target="_blank" rel="noreferrer">{t("common.privacyNotice")}</a>}.
             </p>
           )}
+
+          {/* Differentiating Staff/Admin Login Link */}
+          <div className="mt-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
+            <div className="flex flex-col">
+              <span className="font-bold text-slate-800">Recruiter or Administrator?</span>
+              <span className="text-[11px] text-slate-500">Sign in to manage requisitions, candidate reviews, and scoring.</span>
+            </div>
+            <Link
+              to="/admin/login"
+              className="inline-flex items-center gap-1 font-bold text-teal-700 hover:text-teal-900 shrink-0 ml-3 underline"
+            >
+              <span>HR Admin Sign In →</span>
+            </Link>
+          </div>
         </section>
         <ApplyingFor jobRef={jobRef} />
       </main>

@@ -1,0 +1,3464 @@
+import { useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useTenantCtx } from "@/components/layout/TenantContext";
+import { Button } from "@/components/ui/Button";
+import { Card, Fact, Pill, SectionTitle } from "@/components/ui/Card";
+import { Modal, Spinner } from "@/components/ui/feedback";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import {
+  Alert,
+  Arrow,
+  Bell,
+  Briefcase,
+  Calendar,
+  Check,
+  ChevronRight,
+  Clock,
+  Dashboard,
+  ExternalLink,
+  Eye,
+  File,
+  Filter,
+  Globe,
+  Lock,
+  LogOut,
+  Mail,
+  Monitor,
+  Pin,
+  Plus,
+  Search,
+  Settings,
+  Shield,
+  Sparkle,
+  Users,
+  Video,
+  Wifi,
+  X,
+} from "@/components/ui/icons";
+import { Avatar, ScoreBadge, StagePill } from "@/components/ui/misc";
+import { applyBrand } from "@/lib/brand";
+import { initials } from "@/lib/format";
+import { generateJobDescription } from "@/lib/jobGenerator";
+import {
+  sendEmailNotification,
+  getSentEmails,
+  type SentEmailRecord,
+} from "@/lib/emailService";
+import { AdminLoginPage } from "./AdminLoginPage";
+
+interface JobItem {
+  id: string;
+  externalRef: string;
+  title: string;
+  department: string;
+  location: string;
+  experience?: string;
+  keywords?: string;
+  publishedChannels?: string[];
+  workplaceType: "REMOTE" | "HYBRID" | "ONSITE";
+  status: "OPEN" | "DRAFT" | "CLOSED";
+  description: string;
+  applicantCount: number;
+}
+
+interface ApplicationItem {
+  id: string;
+  candidateName?: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  experience?: string;
+  jobTitle: string;
+  department?: string;
+  stage: string;
+  score: number;
+  submittedAt: string;
+  notes?: string;
+  hardScore: number;
+  preferredScore: number;
+  resumeName?: string;
+  screeningDeadline?: string;
+  rejectionReason?: string;
+  holdReason?: string;
+}
+
+interface AssessmentSessionItem {
+  id: string;
+  candidateId: string;
+  candidateName: string;
+  jobTitle: string;
+  assessmentTitle: string;
+  mode: "STANDARD" | "HIGHER_ASSURANCE";
+  invitedAt: string;
+  expiresIn: string;
+  systemTest: {
+    consent: boolean;
+    webcam: boolean;
+    screenShare: boolean;
+    audio: boolean;
+    networkLatency: string;
+  };
+  durationMins: number;
+  autosaveCheckpoints: number;
+  status: "INVITED" | "IN_PROGRESS" | "FLAGGED_REVIEW" | "ADJUDICATED";
+  aiSignals: {
+    faceVisibilityPct: number;
+    extraPersonsCount: number;
+    phoneDetected: boolean;
+    monitorCount: number;
+    focusLossCount: number;
+    interruptionsCount: number;
+  };
+  riskScore: number;
+  riskLevel: "LOW" | "MEDIUM" | "HIGH";
+  adjudication?: "PASS" | "RETRY" | "MANUAL_REVIEW" | "FAIL";
+  adjudicationNote?: string;
+  auditTrail: { time: string; event: string; tone: "ok" | "warn" | "danger" | "info" }[];
+}
+
+const REJECTION_REASONS = [
+  { id: "SCORE_BELOW_POLICY", label: "BrutalEngine™ score did not meet policy cutoff" },
+  { id: "SCREENING_DEADLINE_EXPIRED", label: "Screening questions 3-day deadline expired" },
+  { id: "ASSESSMENT_FAILED", label: "BrutalAssessAI™ assessment failed / proctoring violations" },
+  { id: "INTERVIEW_NOT_PASSED", label: "Interview rounds did not pass panel evaluation" },
+  { id: "CANDIDATE_WITHDREW", label: "Candidate withdrew or accepted another offer" },
+  { id: "HR_OVERRIDE", label: "HR administrative override / profile mismatch" },
+];
+
+const HOLD_REASONS = [
+  { id: "AWAITING_SCREENING", label: "Awaiting candidate screening question responses" },
+  { id: "BATCH_CAPACITY_REACHED", label: "Batch capacity reached — hold for subsequent wave" },
+  { id: "PENDING_PANEL_AVAILABILITY", label: "Pending senior interviewer panel scheduling" },
+  { id: "TALENT_POOL", label: "Retain in talent pool for future requisition match" },
+];
+
+interface InterviewItem {
+  id: string;
+  roundName: string;
+  candidateName: string;
+  jobTitle: string;
+  scheduledAt: string;
+  interviewerName: string;
+}
+
+interface StaffItem {
+  id: string;
+  name: string;
+  email: string;
+  role: "ADMIN" | "RECRUITER" | "INTERVIEWER";
+  title: string;
+}
+
+export function AdminDashboard() {
+  const tenant = useTenantCtx();
+  const navigate = useNavigate();
+
+  // Authentication gate for Admin Portal
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem("admin_authenticated") === "true";
+  });
+
+  const handleSignOut = () => {
+    sessionStorage.removeItem("admin_authenticated");
+    sessionStorage.removeItem("admin_email");
+    setIsAuthenticated(false);
+  };
+
+  // Active navigation tab
+  const [activeTab, setActiveTab] = useState<
+    "dashboard" | "candidates" | "jobs" | "assessments" | "interviews" | "reports" | "staff" | "settings"
+  >("dashboard");
+  const [currentAdminRole, setCurrentAdminRole] = useState<"ADMIN" | "RECRUITER" | "INTERVIEWER">("ADMIN");
+
+  // State data (dynamically managed, no hardcoded jobs)
+  const [jobs, setJobs] = useState<JobItem[]>(() => {
+    const saved = localStorage.getItem("bh_admin_jobs");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        // ignore parsing errors
+      }
+    }
+    return [];
+  });
+
+  const [applications, setApplications] = useState<ApplicationItem[]>(() => {
+    const saved = localStorage.getItem("bh_admin_applications");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {
+        // ignore parsing errors
+      }
+    }
+    return [
+      {
+        id: "app-101",
+        candidateName: "Rahul Sharma",
+        email: "rahul.sharma@example.com",
+        phone: "+91 98765 43210",
+        city: "Bangalore",
+        experience: "3 years",
+        jobTitle: "Software Developer",
+        department: "Engineering",
+        stage: "IN_REVIEW",
+        score: 88,
+        submittedAt: "2 hours ago",
+        notes: "Strong TypeScript, React, and backend API design experience. Excellent problem solver.",
+        hardScore: 50,
+        preferredScore: 38,
+        resumeName: "Rahul_Sharma_Resume.pdf",
+      },
+      {
+        id: "app-102",
+        candidateName: "Priya Nair",
+        email: "priya.nair@example.com",
+        phone: "+91 98450 11223",
+        city: "Visakhapatnam",
+        experience: "2 years",
+        jobTitle: "Software Developer",
+        department: "Engineering",
+        stage: "INTERVIEW",
+        score: 94,
+        submittedAt: "Yesterday",
+        notes: "Exceptional system design background. Proceeded past technical review with distinction.",
+        hardScore: 50,
+        preferredScore: 44,
+        resumeName: "Priya_Nair_CV.pdf",
+      },
+      {
+        id: "app-103",
+        candidateName: "Aditya Kumar",
+        email: "aditya.k@example.com",
+        phone: "+91 97112 34567",
+        city: "Hyderabad",
+        experience: "1 year",
+        jobTitle: "Software Developer",
+        department: "Engineering",
+        stage: "SUBMITTED",
+        score: 82,
+        submittedAt: "Just now",
+        notes: "Candidate applied via portal. Full profile and resume credentials submitted.",
+        hardScore: 45,
+        preferredScore: 37,
+        resumeName: "Aditya_Kumar_Resume.pdf",
+      },
+      {
+        id: "app-104",
+        candidateName: "Kavita Verma",
+        email: "kavita.verma@example.com",
+        phone: "+91 99887 65432",
+        city: "Pune",
+        experience: "4 years",
+        jobTitle: "Lead Product Designer",
+        department: "Design",
+        stage: "IN_REVIEW",
+        score: 54,
+        submittedAt: "3 days ago",
+        notes: "Below 60 threshold: Review recommended for domain depth before advancing.",
+        hardScore: 30,
+        preferredScore: 24,
+        resumeName: "Kavita_Verma_Portfolio.pdf",
+      },
+      {
+        id: "app-105",
+        candidateName: "Amit Patel",
+        email: "amit.patel@example.com",
+        phone: "+91 98223 99887",
+        city: "Mumbai",
+        experience: "5 years",
+        jobTitle: "DevOps Engineer",
+        department: "Infrastructure",
+        stage: "OFFER",
+        score: 92,
+        submittedAt: "5 days ago",
+        notes: "Completed all technical & culture interviews. Formal offer extended.",
+        hardScore: 50,
+        preferredScore: 42,
+        resumeName: "Amit_Patel_Senior_DevOps.pdf",
+      },
+      {
+        id: "app-106",
+        candidateName: "Sneha Iyer",
+        email: "sneha.iyer@example.com",
+        phone: "+91 98111 22334",
+        city: "Chennai",
+        experience: "2 years",
+        jobTitle: "AI Product Manager",
+        department: "Product",
+        stage: "ASSESSMENT",
+        score: 76,
+        submittedAt: "1 day ago",
+        notes: "Automated assessment invite dispatched. Portfolio in evaluation.",
+        hardScore: 42,
+        preferredScore: 34,
+        resumeName: "Sneha_Iyer_PM.pdf",
+      },
+    ];
+  });
+
+  const [candidateJobFilter, setCandidateJobFilter] = useState("ALL");
+
+  const [interviews, setInterviews] = useState<InterviewItem[]>(() => {
+    const saved = localStorage.getItem("bh_admin_interviews");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return [
+      {
+        id: "int-1",
+        roundName: "System Architecture Round",
+        candidateName: "Priya Nair",
+        jobTitle: "Software Developer",
+        scheduledAt: "Today at 3:00 PM",
+        interviewerName: "Arun K. (Principal Arch)",
+      },
+      {
+        id: "int-2",
+        roundName: "Technical Deep-Dive",
+        candidateName: "Rahul Sharma",
+        jobTitle: "Software Developer",
+        scheduledAt: "Tomorrow at 11:30 AM",
+        interviewerName: "Chandra S. (Lead Eng)",
+      },
+      {
+        id: "int-3",
+        roundName: "Product Sense & AI Strategy",
+        candidateName: "Aditya Kumar",
+        jobTitle: "Software Developer",
+        scheduledAt: "Friday at 4:00 PM",
+        interviewerName: "Tanuja M. (Head of Product)",
+      },
+    ];
+  });
+
+  // Schedule Interview Modal state
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleTargetApp, setScheduleTargetApp] = useState<ApplicationItem | null>(null);
+  const [scheduleRoundName, setScheduleRoundName] = useState("Round 1: System Architecture & Technical Deep-Dive");
+  const [scheduleInterviewer, setScheduleInterviewer] = useState("Arun K. (Principal Architect)");
+  const [scheduleDateTime, setScheduleDateTime] = useState("Tomorrow at 10:00 AM");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+
+  const handleConfirmScheduleInterview = async () => {
+    if (!scheduleTargetApp) return;
+    const newInterview: InterviewItem = {
+      id: `int-${Date.now()}`,
+      roundName: scheduleRoundName.trim() || "Technical Round",
+      candidateName: scheduleTargetApp.candidateName || "Candidate",
+      jobTitle: scheduleTargetApp.jobTitle,
+      scheduledAt: scheduleDateTime.trim() || "Upcoming",
+      interviewerName: scheduleInterviewer.trim() || "Technical Panel",
+    };
+    const updated = [newInterview, ...interviews];
+    setInterviews(updated);
+    localStorage.setItem("bh_admin_interviews", JSON.stringify(updated));
+
+    // Advance candidate to INTERVIEW stage if behind
+    await handleStageAdvance("INTERVIEW", scheduleTargetApp);
+    setScheduleModalOpen(false);
+  };
+
+  // Custom Formal Offer Modal state
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
+  const [offerApp, setOfferApp] = useState<ApplicationItem | null>(null);
+  const [offerBaseSalary, setOfferBaseSalary] = useState("₹ 18,00,000 / year");
+  const [offerBonus, setOfferBonus] = useState("₹ 2,00,000");
+  const [offerEquity, setOfferEquity] = useState("5,000 RSUs (4-year vesting)");
+  const [offerWorkplace, setOfferWorkplace] = useState("Visakhapatnam (Hybrid)");
+  const [offerStartDate, setOfferStartDate] = useState("1st of next month");
+
+  const handleConfirmSendOffer = async () => {
+    if (!offerApp) return;
+    const customTerms = {
+      jobTitle: offerApp.jobTitle,
+      baseSalary: offerBaseSalary,
+      bonus: offerBonus,
+      equity: offerEquity,
+      location: offerWorkplace,
+      startDate: offerStartDate,
+      message: `We were thoroughly impressed by your performance in the assessment and technical rounds. We are delighted to extend this formal offer for the ${offerApp.jobTitle} position at Brutallyhired.`,
+    };
+    localStorage.setItem(`bh_offer_${offerApp.id}`, JSON.stringify(customTerms));
+    await handleStageAdvance("OFFER", offerApp);
+    setOfferModalOpen(false);
+  };
+
+  const staff: StaffItem[] = [
+    { id: "st-1", name: "Tanuja HR", email: "hr@brutallyhired.com", role: "ADMIN", title: "HR Director & Administrator" },
+    { id: "st-2", name: "Chandra Talent", email: "recruiting@brutallyhired.com", role: "RECRUITER", title: "Senior Tech Talent Partner" },
+    { id: "st-3", name: "Arun K.", email: "arun.arch@brutallyhired.com", role: "INTERVIEWER", title: "Principal Software Architect" },
+  ];
+
+  // Modals & Controls
+  const [viewJobModal, setViewJobModal] = useState<JobItem | null>(null);
+  const [activeReviewApp, setActiveReviewApp] = useState<ApplicationItem | null>(null);
+  const [stageNote, setStageNote] = useState("");
+  const [newJobOpen, setNewJobOpen] = useState(false);
+  const [newJobTitle, setNewJobTitle] = useState("");
+  const [newJobDept, setNewJobDept] = useState("");
+  const [newJobLoc, setNewJobLoc] = useState("");
+  const [newJobExp, setNewJobExp] = useState("");
+  const [newJobKeywords, setNewJobKeywords] = useState("");
+  const [newJobChannels, setNewJobChannels] = useState<string[]>([
+    "Brutallyhired Portal",
+    "LinkedIn",
+    "Indeed",
+  ]);
+  const [newJobWorkplace, setNewJobWorkplace] = useState<"REMOTE" | "HYBRID" | "ONSITE">("HYBRID");
+  const [newJobDesc, setNewJobDesc] = useState("");
+  const [generateError, setGenerateError] = useState("");
+
+  const handleAutoGenerateDesc = () => {
+    setGenerateError("");
+    if (!newJobTitle.trim()) {
+      setGenerateError("Please enter a Job Title before generating the description.");
+      return;
+    }
+    const desc = generateJobDescription({
+      title: newJobTitle,
+      department: newJobDept,
+      location: newJobLoc,
+      experience: newJobExp,
+      keywords: newJobKeywords,
+      workplaceType: newJobWorkplace,
+    });
+    setNewJobDesc(desc);
+  };
+
+  // Rejection & Hold modal state (Diagram 1)
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectActionType, setRejectActionType] = useState<"REJECTED" | "ON_HOLD">("REJECTED");
+  const [selectedRejectReason, setSelectedRejectReason] = useState(REJECTION_REASONS[0]?.label || "");
+  const [rejectCustomNote, setRejectCustomNote] = useState("");
+
+  // Email Notification & Inspection states
+  const [emailNotice, setEmailNotice] = useState<{
+    recipient: string;
+    subject: string;
+    portalUrl: string;
+    stage: string;
+  } | null>(null);
+  const [previewEmailModal, setPreviewEmailModal] = useState<SentEmailRecord | null>(null);
+
+  const handleConfirmRejectOrHold = () => {
+    if (!activeReviewApp) return;
+    const finalReason = selectedRejectReason + (rejectCustomNote.trim() ? ` — ${rejectCustomNote.trim()}` : "");
+    const updated = applications.map((a) => {
+      if (a.id === activeReviewApp.id) {
+        return {
+          ...a,
+          stage: rejectActionType,
+          rejectionReason: rejectActionType === "REJECTED" ? finalReason : undefined,
+          holdReason: rejectActionType === "ON_HOLD" ? finalReason : undefined,
+        };
+      }
+      return a;
+    });
+    setApplications(updated);
+    localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+    setActiveReviewApp((prev) =>
+      prev
+        ? {
+            ...prev,
+            stage: rejectActionType,
+            rejectionReason: rejectActionType === "REJECTED" ? finalReason : undefined,
+            holdReason: rejectActionType === "ON_HOLD" ? finalReason : undefined,
+          }
+        : null
+    );
+
+    // Dispatch automated email notification for Rejection / Hold
+    void sendEmailNotification({
+      to: activeReviewApp.email,
+      recipientName: activeReviewApp.candidateName || "Candidate",
+      stage: rejectActionType as any,
+      jobTitle: activeReviewApp.jobTitle,
+      portalPath: `/${tenant.slug}/applications/${activeReviewApp.id}`,
+      tenantSlug: tenant.slug,
+      customHeading:
+        rejectActionType === "REJECTED"
+          ? `Application Update: ${activeReviewApp.jobTitle}`
+          : `Application Status: On Hold for ${activeReviewApp.jobTitle}`,
+      customBody:
+        rejectActionType === "REJECTED"
+          ? `Thank you for taking the time to apply with Brutallyhired. While your background was reviewed carefully, we have decided not to advance your application for ${activeReviewApp.jobTitle} at this time (${finalReason}). We wish you all the best in your career pursuits.`
+          : `Your application for ${activeReviewApp.jobTitle} has been placed on hold (${finalReason}). We are reviewing candidate batches and will follow up with further updates soon.`,
+    });
+
+    setRejectModalOpen(false);
+    setRejectCustomNote("");
+  };
+
+  const handleRestoreCandidate = () => {
+    if (!activeReviewApp) return;
+    const updated = applications.map((a) => {
+      if (a.id === activeReviewApp.id) {
+        return {
+          ...a,
+          stage: "IN_REVIEW",
+          rejectionReason: undefined,
+          holdReason: undefined,
+        };
+      }
+      return a;
+    });
+    setApplications(updated);
+    localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+    setActiveReviewApp((prev) =>
+      prev
+        ? {
+            ...prev,
+            stage: "IN_REVIEW",
+            rejectionReason: undefined,
+            holdReason: undefined,
+          }
+        : null
+    );
+  };
+
+  // Assessment & Secure Examination Architecture state (Figure 4)
+  const [assessmentFilterMode, setAssessmentFilterMode] = useState<"ALL" | "STANDARD" | "HIGHER_ASSURANCE">("ALL");
+  const [assessmentSubTab, setAssessmentSubTab] = useState<"QUEUE" | "INVITES" | "TEMPLATES">("QUEUE");
+  const [assessmentRiskFilter, setAssessmentRiskFilter] = useState<"ALL" | "FLAGGED" | "CLEAN">("ALL");
+  const [activeInspectSession, setActiveInspectSession] = useState<AssessmentSessionItem | null>(null);
+
+  const [assessmentSessions, setAssessmentSessions] = useState<AssessmentSessionItem[]>(() => {
+    const saved = localStorage.getItem("bh_assessment_sessions");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return [
+      {
+        id: "assess-1",
+        candidateId: "app-101",
+        candidateName: "Rahul Sharma",
+        jobTitle: "Software Developer",
+        assessmentTitle: "Senior Full-Stack & Architecture Challenge",
+        mode: "STANDARD",
+        invitedAt: "Yesterday",
+        expiresIn: "48 hours remaining (3-day deadline)",
+        systemTest: {
+          consent: true,
+          webcam: true,
+          screenShare: true,
+          audio: true,
+          networkLatency: "22ms (Broadband)",
+        },
+        durationMins: 60,
+        autosaveCheckpoints: 28,
+        status: "FLAGGED_REVIEW",
+        aiSignals: {
+          faceVisibilityPct: 99,
+          extraPersonsCount: 0,
+          phoneDetected: false,
+          monitorCount: 1,
+          focusLossCount: 0,
+          interruptionsCount: 0,
+        },
+        riskScore: 4,
+        riskLevel: "LOW",
+        auditTrail: [
+          { time: "00:00", event: "Identity consent and system pre-checks verified", tone: "ok" },
+          { time: "05:00", event: "Exam session started; continuous webcam & screen telemetry engaged", tone: "info" },
+          { time: "25:00", event: "Autosave checkpoint #15 synced successfully", tone: "ok" },
+          { time: "58:00", event: "Exam completed and submitted; audit trail sealed", tone: "ok" },
+        ],
+      },
+      {
+        id: "assess-2",
+        candidateId: "app-106",
+        candidateName: "Sneha Iyer",
+        jobTitle: "AI Product Manager",
+        assessmentTitle: "AI Strategy & Rubric Assessment",
+        mode: "STANDARD",
+        invitedAt: "1 day ago",
+        expiresIn: "36 hours remaining (3-day deadline)",
+        systemTest: {
+          consent: true,
+          webcam: true,
+          screenShare: true,
+          audio: true,
+          networkLatency: "58ms (Cellular hotspot)",
+        },
+        durationMins: 40,
+        autosaveCheckpoints: 16,
+        status: "FLAGGED_REVIEW",
+        aiSignals: {
+          faceVisibilityPct: 74,
+          extraPersonsCount: 1,
+          phoneDetected: true,
+          monitorCount: 2,
+          focusLossCount: 4,
+          interruptionsCount: 1,
+        },
+        riskScore: 82,
+        riskLevel: "HIGH",
+        auditTrail: [
+          { time: "00:00", event: "Candidate consent granted; dual monitor warning dismissed", tone: "warn" },
+          { time: "14:18", event: "AI Signal Alert: Secondary person detected in camera background", tone: "danger" },
+          { time: "22:04", event: "AI Signal Alert: Mobile device identified in candidate field of view", tone: "danger" },
+          { time: "31:40", event: "Focus loss: Candidate tab-switched 4 times outside exam client", tone: "warn" },
+        ],
+      },
+      {
+        id: "assess-3",
+        candidateId: "app-102",
+        candidateName: "Priya Nair",
+        jobTitle: "Software Developer",
+        assessmentTitle: "Distributed Systems & DB Design Quiz",
+        mode: "STANDARD",
+        invitedAt: "2 days ago",
+        expiresIn: "24 hours remaining (3-day deadline)",
+        systemTest: {
+          consent: true,
+          webcam: true,
+          screenShare: true,
+          audio: true,
+          networkLatency: "18ms (Fiber)",
+        },
+        durationMins: 45,
+        autosaveCheckpoints: 22,
+        status: "ADJUDICATED",
+        aiSignals: {
+          faceVisibilityPct: 100,
+          extraPersonsCount: 0,
+          phoneDetected: false,
+          monitorCount: 1,
+          focusLossCount: 0,
+          interruptionsCount: 0,
+        },
+        riskScore: 2,
+        riskLevel: "LOW",
+        adjudication: "PASS",
+        adjudicationNote: "Verified by Lead Recruiter: Exceptional technical performance, verified proctored telemetry.",
+        auditTrail: [
+          { time: "00:00", event: "Candidate passed pre-check system test", tone: "ok" },
+          { time: "42:15", event: "Candidate submitted exam ahead of timer; all tests verified", tone: "ok" },
+          { time: "Review", event: "Human reviewer passed candidate into Interview rounds", tone: "ok" },
+        ],
+      },
+      {
+        id: "assess-4",
+        candidateId: "app-103",
+        candidateName: "Aditya Kumar",
+        jobTitle: "Software Developer",
+        assessmentTitle: "Senior Full-Stack & Architecture Challenge",
+        mode: "HIGHER_ASSURANCE",
+        invitedAt: "3 hours ago",
+        expiresIn: "69 hours remaining (3-day deadline)",
+        systemTest: {
+          consent: true,
+          webcam: true,
+          screenShare: true,
+          audio: true,
+          networkLatency: "15ms (Secure Client)",
+        },
+        durationMins: 60,
+        autosaveCheckpoints: 12,
+        status: "IN_PROGRESS",
+        aiSignals: {
+          faceVisibilityPct: 98,
+          extraPersonsCount: 0,
+          phoneDetected: false,
+          monitorCount: 1,
+          focusLossCount: 0,
+          interruptionsCount: 0,
+        },
+        riskScore: 6,
+        riskLevel: "LOW",
+        auditTrail: [
+          { time: "00:00", event: "Higher Assurance secure exam client launched with signed config", tone: "ok" },
+          { time: "01:00", event: "OS-level restrictions active: clipboard, secondary displays locked", tone: "info" },
+          { time: "18:00", event: "Timed exam in progress; autosave active every 15s", tone: "ok" },
+        ],
+      },
+    ];
+  });
+
+  const handleAdjudicate = (
+    sessionId: string,
+    decision: "PASS" | "RETRY" | "MANUAL_REVIEW" | "FAIL",
+    note?: string
+  ) => {
+    const updatedSessions = assessmentSessions.map((s) => {
+      if (s.id === sessionId) {
+        return {
+          ...s,
+          status: decision === "RETRY" ? ("INVITED" as const) : ("ADJUDICATED" as const),
+          adjudication: decision,
+          adjudicationNote: note || `Adjudicated as ${decision} by HR Reviewer`,
+        };
+      }
+      return s;
+    });
+    setAssessmentSessions(updatedSessions);
+    localStorage.setItem("bh_assessment_sessions", JSON.stringify(updatedSessions));
+
+    const targetSession = assessmentSessions.find((s) => s.id === sessionId);
+    if (targetSession) {
+      if (decision === "PASS") {
+        const updatedApps = applications.map((a) =>
+          a.id === targetSession.candidateId || a.candidateName === targetSession.candidateName
+            ? { ...a, stage: "INTERVIEW" }
+            : a
+        );
+        setApplications(updatedApps);
+        localStorage.setItem("bh_admin_applications", JSON.stringify(updatedApps));
+      } else if (decision === "FAIL") {
+        const updatedApps = applications.map((a) =>
+          a.id === targetSession.candidateId || a.candidateName === targetSession.candidateName
+            ? {
+                ...a,
+                stage: "REJECTED",
+                rejectionReason: "BrutalAssessAI™ proctoring audit failure / policy violation",
+              }
+            : a
+        );
+        setApplications(updatedApps);
+        localStorage.setItem("bh_admin_applications", JSON.stringify(updatedApps));
+      }
+    }
+  };
+
+  const [inviteStaffOpen, setInviteStaffOpen] = useState(false);
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffRole, setStaffRole] = useState<"ADMIN" | "RECRUITER" | "INTERVIEWER">("RECRUITER");
+
+  // Settings State
+  const [brandHex, setBrandHex] = useState(tenant.brandColor || "#094c3c");
+  const [threshold, setThreshold] = useState(tenant.talentPoolMonths ? 60 : 60);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [stageFilter, setStageFilter] = useState("ALL");
+
+  const filteredApps = applications.filter((app) => {
+    const matchesSearch =
+      (app.candidateName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.jobTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (app.city || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (app.department || "").toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+    if (stageFilter !== "ALL") {
+      if (stageFilter === "LOW_SCORE") {
+        if (app.score >= threshold) return false;
+      } else if (app.stage !== stageFilter) {
+        return false;
+      }
+    }
+    if (candidateJobFilter !== "ALL" && app.jobTitle !== candidateJobFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  const handleStageAdvance = async (targetStage: string, specificApp?: ApplicationItem) => {
+    const app = specificApp || activeReviewApp;
+    if (!app) return;
+    const updated = applications.map((a) => (a.id === app.id ? { ...a, stage: targetStage } : a));
+    setApplications(updated);
+    localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+    if (activeReviewApp && activeReviewApp.id === app.id) {
+      setActiveReviewApp((prev) => (prev ? { ...prev, stage: targetStage } : null));
+    }
+    setStageNote("");
+
+    // Automatically dispatch email notification for milestone stages
+    if (["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(targetStage)) {
+      let portalPath = `/${tenant.slug}/applications/${app.id}/assessments`;
+      if (targetStage === "INTERVIEW") portalPath = `/${tenant.slug}/applications/${app.id}/interviews`;
+      if (targetStage === "OFFER") portalPath = `/${tenant.slug}/applications/${app.id}/offer`;
+      if (targetStage === "HIRED") portalPath = `/${tenant.slug}/applications/${app.id}/onboarding`;
+
+      const sent = await sendEmailNotification({
+        to: app.email,
+        recipientName: app.candidateName || "Candidate",
+        stage: targetStage as any,
+        jobTitle: app.jobTitle,
+        portalPath,
+        tenantSlug: tenant.slug,
+      });
+
+      setEmailNotice({
+        recipient: app.email,
+        subject: sent.subject,
+        portalUrl: sent.portalUrl,
+        stage: targetStage,
+      });
+
+      // Also ensure active assessment queue session is added/ready if SHORTLISTED/ASSESSMENT
+      if (targetStage === "SHORTLISTED" || targetStage === "ASSESSMENT") {
+        setAssessmentSessions((prev) => {
+          const exists = prev.some((s) => s.candidateId === app.id);
+          if (exists) return prev;
+          const newSession: AssessmentSessionItem = {
+            id: `assess-${Date.now()}`,
+            candidateId: app.id,
+            candidateName: app.candidateName || "Candidate",
+            jobTitle: app.jobTitle,
+            assessmentTitle: "Senior Full-Stack & Architecture Challenge",
+            mode: "STANDARD",
+            invitedAt: "Just now",
+            expiresIn: "72 hours remaining (3-day deadline)",
+            systemTest: { consent: true, webcam: true, screenShare: true, audio: true, networkLatency: "22ms (Broadband)" },
+            durationMins: 45,
+            autosaveCheckpoints: 0,
+            status: "INVITED",
+            aiSignals: { faceVisibilityPct: 100, extraPersonsCount: 0, phoneDetected: false, monitorCount: 1, focusLossCount: 0, interruptionsCount: 0 },
+            riskScore: 0,
+            riskLevel: "LOW",
+            auditTrail: [{ time: "00:00", event: "Shortlist email notification dispatched with assessment URL", tone: "ok" }],
+          };
+          const next = [newSession, ...prev];
+          localStorage.setItem("bh_assessment_sessions", JSON.stringify(next));
+          return next;
+        });
+      }
+    }
+  };
+
+  const handleCreateJob = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newJobTitle.trim()) {
+      setGenerateError("Job title is required.");
+      return;
+    }
+    if (!newJobDesc.trim()) {
+      setGenerateError("Please click 'Auto-Generate with AI' to generate the job description before publishing.");
+      return;
+    }
+
+    const item: JobItem = {
+      id: `job-${Date.now()}`,
+      externalRef:
+        newJobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
+        `job-${Date.now()}`,
+      title: newJobTitle.trim(),
+      department: newJobDept.trim() || "Technology",
+      location: newJobLoc.trim() || "Remote",
+      experience: newJobExp.trim() || undefined,
+      keywords: newJobKeywords.trim() || undefined,
+      publishedChannels: newJobChannels.length > 0 ? newJobChannels : ["Brutallyhired Portal"],
+      workplaceType: newJobWorkplace,
+      status: "OPEN",
+      description: newJobDesc.trim(),
+      applicantCount: 0,
+    };
+
+    const updated = [item, ...jobs];
+    setJobs(updated);
+    localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
+
+    setNewJobOpen(false);
+    setNewJobTitle("");
+    setNewJobDept("");
+    setNewJobLoc("");
+    setNewJobExp("");
+    setNewJobKeywords("");
+    setNewJobChannels(["Brutallyhired Portal", "LinkedIn", "Indeed"]);
+    setNewJobWorkplace("HYBRID");
+    setNewJobDesc("");
+    setGenerateError("");
+  };
+
+  const handleDeleteJob = (jobId: string) => {
+    const updated = jobs.filter((j) => j.id !== jobId);
+    setJobs(updated);
+    localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
+  };
+
+  const handleSaveSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    applyBrand(brandHex);
+    setSettingsSaved(true);
+    setTimeout(() => setSettingsSaved(false), 3000);
+  };
+
+  if (!isAuthenticated) {
+    return <AdminLoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
+  return (
+    <div className="flex min-h-screen bg-canvas text-ink">
+      {/* Left Sidebar Navigation */}
+      <aside className="sticky top-0 h-screen w-64 shrink-0 border-r border-line bg-white flex flex-col justify-between p-4 z-30 shadow-sm">
+        <div className="space-y-6">
+          {/* Brand Mark in Sidebar */}
+          <div className="flex items-center gap-3 px-2 pt-2">
+            <span
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand font-display text-sm font-bold text-brand-fg shadow-sm"
+              aria-hidden
+            >
+              {initials(tenant.name)}
+            </span>
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="font-display text-[16px] font-bold tracking-tight text-ink truncate">
+                {tenant.name}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                Admin Command Center
+              </span>
+            </div>
+          </div>
+
+          {/* Navigation Items (Sidebar) */}
+          <nav aria-label="Admin Navigation" className="space-y-1">
+            {[
+              { id: "dashboard", label: "Dashboard", icon: <Dashboard size={18} /> },
+              { id: "candidates", label: "Candidates", icon: <Users size={18} /> },
+              { id: "jobs", label: "Jobs", icon: <Briefcase size={18} /> },
+              { id: "assessments", label: "Assessments", icon: <Shield size={18} /> },
+              { id: "interviews", label: "Interviews", icon: <Video size={18} /> },
+              { id: "reports", label: "Analytics & Reports", icon: <File size={18} /> },
+              { id: "staff", label: "Team", icon: <Users size={18} /> },
+              { id: "settings", label: "Settings", icon: <Settings size={18} /> },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-all ${
+                    isActive
+                      ? "bg-brand text-brand-fg shadow-sm"
+                      : "text-ink-2 hover:bg-canvas hover:text-ink"
+                  }`}
+                >
+                  <span className={isActive ? "text-brand-fg" : "text-ink-muted"}>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="space-y-3 border-t border-line pt-4">
+          <Link
+            to={`/${tenant.slug}/applications`}
+            className="flex items-center justify-between rounded-xl border border-line-2 bg-canvas px-3 py-2 text-xs font-semibold text-ink-2 no-underline hover:border-brand hover:text-brand transition-all"
+            title="Switch back to candidate view"
+          >
+            <span className="flex items-center gap-2">
+              <ExternalLink size={14} />
+              Candidate Portal
+            </span>
+            <ChevronRight size={14} className="text-ink-muted" />
+          </Link>
+
+          <div className="flex items-center justify-between px-2 py-1">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Avatar name="Tanuja HR" size={34} />
+              <div className="flex flex-col text-left leading-tight min-w-0">
+                <span className="text-xs font-bold text-ink truncate">Tanuja HR</span>
+                <select
+                  value={currentAdminRole}
+                  onChange={(e) => setCurrentAdminRole(e.target.value as any)}
+                  className="text-[10px] font-semibold text-brand bg-transparent border-0 cursor-pointer p-0 focus:ring-0"
+                  title="Simulate Role Permissions"
+                >
+                  <option value="ADMIN">Role: Admin</option>
+                  <option value="RECRUITER">Role: Recruiter</option>
+                  <option value="INTERVIEWER">Role: Interviewer</option>
+                </select>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Sign out of Admin"
+              className="p-1.5 text-ink-muted hover:text-rose-600 rounded-lg hover:bg-canvas transition-colors"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 min-w-0 overflow-y-auto p-6 md:p-8 space-y-8">
+        {/* TAB 1: DASHBOARD / OVERVIEW */}
+        {activeTab === "dashboard" && (
+          <div className="space-y-8">
+            {/* Header Banner */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">
+                  Recruitment Command Dashboard
+                </h1>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Automated resume evaluation, candidate pipeline, and LiveKit video interviews for{" "}
+                  <strong className="text-ink font-semibold">{tenant.name}</strong>.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <Button icon={<Plus size={18} />} onClick={() => setNewJobOpen(true)}>
+                  Create Job Requisition
+                </Button>
+                <Button variant="ghost" icon={<Users size={18} />} onClick={() => setActiveTab("candidates")}>
+                  View Pipeline
+                </Button>
+              </div>
+            </div>
+
+            {/* Top Fact Cards Row */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Fact
+                label="Total Applications"
+                value={applications.length}
+                sub={`${applications.filter((a) => a.stage === "HIRED" || a.stage === "OFFER").length} offered or hired`}
+                trend="up"
+                icon={<Users size={20} />}
+              />
+              <Fact
+                label="In Active Review"
+                value={applications.filter((a) => a.stage === "IN_REVIEW" || a.stage === "SUBMITTED").length}
+                sub={`${applications.filter((a) => a.score < threshold).length} scoring below ${threshold} threshold`}
+                trend="neutral"
+                icon={<Alert size={20} />}
+              />
+              <Fact
+                label="Active Job Listings"
+                value={jobs.filter((j) => j.status === "OPEN").length}
+                sub={`${jobs.length} total requisitions`}
+                trend="up"
+                icon={<Briefcase size={20} />}
+              />
+              <Fact
+                label="Scheduled Interviews"
+                value={interviews.length}
+                sub="LiveKit rooms ready"
+                trend="up"
+                icon={<Video size={20} />}
+              />
+            </div>
+
+            {/* Pipeline Funnel */}
+            <Card className="space-y-4">
+              <SectionTitle
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("candidates")}
+                    className="text-xs font-semibold text-brand hover:underline flex items-center gap-1"
+                  >
+                    View All Candidates <Arrow size={14} />
+                  </button>
+                }
+              >
+                Candidate Hiring Pipeline
+              </SectionTitle>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 pt-2">
+                {[
+                  { label: "Submitted", count: applications.filter((a) => a.stage === "SUBMITTED").length, tone: "bg-blue-50 text-blue-700 border-blue-200" },
+                  { label: "In Review", count: applications.filter((a) => a.stage === "IN_REVIEW").length, tone: "bg-amber-50 text-amber-700 border-amber-200" },
+                  { label: "Assessment", count: applications.filter((a) => a.stage === "ASSESSMENT").length, tone: "bg-purple-50 text-purple-700 border-purple-200" },
+                  { label: "Interview", count: applications.filter((a) => a.stage === "INTERVIEW").length, tone: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+                  { label: "Offer", count: applications.filter((a) => a.stage === "OFFER").length, tone: "bg-teal-50 text-teal-700 border-teal-200" },
+                  { label: "Onboarding", count: applications.filter((a) => a.stage === "ONBOARDING").length, tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                  { label: "Hired", count: applications.filter((a) => a.stage === "HIRED").length, tone: "bg-green-100 text-green-800 border-green-300" },
+                ].map((st) => (
+                  <button
+                    key={st.label}
+                    type="button"
+                    onClick={() => {
+                      setStageFilter(st.label.toUpperCase().replace(/\s+/g, "_"));
+                      setActiveTab("candidates");
+                    }}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition-all hover:scale-105 ${st.tone}`}
+                  >
+                    <span className="text-[11px] font-semibold uppercase tracking-wider">{st.label}</span>
+                    <strong className="mt-1 text-2xl font-bold">{st.count}</strong>
+                  </button>
+                ))}
+              </div>
+            </Card>
+
+            {/* Split Row: Candidates Table & Right Widgets */}
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              {/* Left Column: Recent Applications */}
+              <div className="space-y-4 lg:col-span-2">
+                <Card className="space-y-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-[18px] font-bold text-ink">Recent Candidates</h3>
+                      <p className="text-xs text-ink-muted">Automated screening against job requirements</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                        <input
+                          type="text"
+                          placeholder="Search candidate..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="h-9 w-44 rounded-lg border border-line-2 bg-white pl-8 pr-3 text-xs text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none"
+                        />
+                      </div>
+
+                      <select
+                        value={stageFilter}
+                        onChange={(e) => setStageFilter(e.target.value)}
+                        className="h-9 rounded-lg border border-line-2 bg-white px-2.5 text-xs text-ink focus:border-brand focus:outline-none"
+                      >
+                        <option value="ALL">All Stages</option>
+                        <option value="IN_REVIEW">In Review</option>
+                        <option value="INTERVIEW">Interview</option>
+                        <option value="ASSESSMENT">Assessment</option>
+                        <option value="LOW_SCORE">Below Threshold (&lt;{threshold})</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                          <th className="pb-3 pl-2">Candidate</th>
+                          <th className="pb-3">Role</th>
+                          <th className="pb-3">AI Score</th>
+                          <th className="pb-3">Stage</th>
+                          <th className="pb-3">Applied</th>
+                          <th className="pb-3 pr-2 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-line/60">
+                        {filteredApps.map((app) => (
+                          <tr key={app.id} className="hover:bg-canvas/50">
+                            <td className="py-3 pl-2">
+                              <div className="flex items-center gap-2.5">
+                                <Avatar name={app.email} size={30} />
+                                <span className="font-semibold text-ink text-xs">{app.email}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 text-xs text-ink-2 font-medium">{app.jobTitle}</td>
+                            <td className="py-3">
+                              <ScoreBadge score={app.score} threshold={threshold} />
+                            </td>
+                            <td className="py-3">
+                              <StagePill stage={app.stage} />
+                            </td>
+                            <td className="py-3 text-xs text-ink-muted">{app.submittedAt}</td>
+                            <td className="py-3 pr-2 text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setActiveReviewApp(app)}
+                              >
+                                Review
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+
+                {/* AI Rubric Banner */}
+                <div className="flex items-center justify-between rounded-2xl border border-line bg-gradient-to-r from-ok-soft/50 via-white to-info-soft/30 p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-brand-fg">
+                      <Sparkle size={18} />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-ink">Automated Scoring Engine</h4>
+                      <p className="text-[11px] text-ink-muted">
+                        Candidates scoring below {threshold} trigger human review. Configure thresholds in Settings.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("settings")}
+                    className="text-xs font-semibold text-brand hover:underline whitespace-nowrap"
+                  >
+                    Adjust Threshold →
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Column: Widgets */}
+              <div className="space-y-6">
+                {/* Upcoming LiveKit Interviews */}
+                <Card className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-line pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-ink">Upcoming Interviews</h3>
+                      <p className="text-xs text-ink-muted">LiveKit video room schedules</p>
+                    </div>
+                    <span className="flex h-5 items-center rounded-full bg-info-soft px-2 text-[10px] font-bold text-info-ink">
+                      {interviews.length} Scheduled
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {interviews.map((int) => (
+                      <div
+                        key={int.id}
+                        className="rounded-xl border border-line-soft bg-[#F9FAFC] p-3 text-xs space-y-1 hover:border-line transition-all"
+                      >
+                        <div className="flex items-center justify-between font-bold text-ink">
+                          <span>{int.roundName}</span>
+                          <span className="text-ok flex items-center gap-1 text-[11px]">
+                            <Video size={12} /> LiveKit
+                          </span>
+                        </div>
+                        <div className="text-ink-2 font-medium">{int.candidateName}</div>
+                        <div className="flex items-center justify-between pt-1 text-[11px] text-ink-muted border-t border-line/50">
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} /> {int.scheduledAt}
+                          </span>
+                          <span>{int.interviewerName}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* Active Jobs Widget */}
+                <Card className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-line pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-ink">Active Openings</h3>
+                      <p className="text-xs text-ink-muted">Open job posts</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("jobs")}
+                      className="text-xs font-semibold text-brand hover:underline"
+                    >
+                      View all
+                    </button>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {jobs.length === 0 ? (
+                      <p className="py-4 text-center text-xs text-ink-muted">
+                        No active openings yet. Click "+ Post Job" to publish one.
+                      </p>
+                    ) : (
+                      jobs.map((j) => (
+                        <div
+                          key={j.id}
+                          onClick={() => setViewJobModal(j)}
+                          className="flex items-center justify-between rounded-xl border border-line-soft p-2.5 hover:bg-canvas/50 cursor-pointer transition-colors"
+                          title="Click to view full job details"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <span className="font-semibold text-xs text-ink block truncate">{j.title}</span>
+                            <span className="text-[11px] text-ink-muted">{j.department || "Technology"} • {j.location || "Remote"}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-brand">{j.applicantCount} apps</span>
+                            <Eye size={13} className="text-ink-muted" />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: CANDIDATES */}
+        {activeTab === "candidates" && (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-ink">Candidates</h1>
+                <p className="text-sm text-ink-muted">
+                  Review and manage all applicants who applied for your open positions.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-xl border border-line bg-white px-3.5 py-1.5 text-xs font-semibold text-ink shadow-sm">
+                  Total Applicants: <strong className="text-brand">{applications.length}</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Quick KPI stats */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Total Applied</span>
+                <p className="text-2xl font-bold text-ink">{applications.length}</p>
+              </Card>
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">In Review</span>
+                <p className="text-2xl font-bold text-amber-600">
+                  {applications.filter((a) => a.stage === "IN_REVIEW" || a.stage === "SUBMITTED").length}
+                </p>
+              </Card>
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Interviewing</span>
+                <p className="text-2xl font-bold text-brand">
+                  {applications.filter((a) => a.stage === "INTERVIEW" || a.stage === "ASSESSMENT").length}
+                </p>
+              </Card>
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Offers / Hired</span>
+                <p className="text-2xl font-bold text-emerald-600">
+                  {applications.filter((a) => a.stage === "OFFER" || a.stage === "HIRED").length}
+                </p>
+              </Card>
+            </div>
+
+            {/* Search and Filters */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <input
+                    type="search"
+                    placeholder="Search candidate name, email, job, city..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full rounded-xl border border-line bg-white py-2 pl-9 pr-3 text-xs text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand shadow-sm"
+                  />
+                  <Search size={14} className="absolute left-3 top-2.5 text-ink-muted" />
+                </div>
+
+                {/* Filter by Job Requisition */}
+                <select
+                  value={candidateJobFilter}
+                  onChange={(e) => setCandidateJobFilter(e.target.value)}
+                  className="rounded-xl border border-line bg-white px-3 py-2 text-xs font-medium text-ink shadow-sm focus:border-brand focus:outline-none"
+                >
+                  <option value="ALL">All Applied Positions</option>
+                  {Array.from(new Set(applications.map((a) => a.jobTitle))).map((jTitle) => (
+                    <option key={jTitle} value={jTitle}>
+                      {jTitle}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Stage filter pills */}
+              <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-line bg-white p-1.5 shadow-sm">
+                {[
+                  { id: "ALL", label: "All Stages" },
+                  { id: "SUBMITTED", label: "Submitted" },
+                  { id: "IN_REVIEW", label: "In Review" },
+                  { id: "SHORTLISTED", label: "Shortlisted" },
+                  { id: "ASSESSMENT", label: "Assessment" },
+                  { id: "INTERVIEW", label: "Interview" },
+                  { id: "OFFER", label: "Offer" },
+                  { id: "HIRED", label: "Hired" },
+                  { id: "ON_HOLD", label: "On Hold" },
+                  { id: "REJECTED", label: "Rejected" },
+                ].map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setStageFilter(st.id)}
+                    className={`rounded-xl px-3 py-1 text-xs font-semibold whitespace-nowrap transition-all ${
+                      stageFilter === st.id ? "bg-brand text-brand-fg shadow-sm" : "text-ink-2 hover:bg-canvas"
+                    }`}
+                  >
+                    {st.label} (
+                    {st.id === "ALL" ? applications.length : applications.filter((a) => a.stage === st.id).length})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Candidates Table */}
+            <Card className="overflow-hidden p-0">
+              {filteredApps.length === 0 ? (
+                <div className="p-12 text-center space-y-2">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-canvas text-ink-muted">
+                    <Users size={24} />
+                  </div>
+                  <h3 className="text-sm font-bold text-ink">No candidates found</h3>
+                  <p className="text-xs text-ink-muted max-w-sm mx-auto">
+                    {searchQuery || stageFilter !== "ALL" || candidateJobFilter !== "ALL"
+                      ? "No candidates match the current search or stage filter."
+                      : "When candidates apply for jobs through the candidate portal, their complete details and submitted resume will appear here."}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-line bg-canvas/60 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                        <th className="py-3.5 pl-6 pr-4">Candidate</th>
+                        <th className="py-3.5 px-4">Applied Job</th>
+                        <th className="py-3.5 px-4">Experience</th>
+                        <th className="py-3.5 px-4">Stage & Status</th>
+                        <th className="py-3.5 px-4">Match Score</th>
+                        <th className="py-3.5 px-4">Applied Date</th>
+                        <th className="py-3.5 pr-6 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line-soft">
+                      {filteredApps.map((app) => (
+                        <tr
+                          key={app.id}
+                          className="hover:bg-canvas/50 transition-colors cursor-pointer group"
+                          onClick={() => setActiveReviewApp(app)}
+                        >
+                          <td className="py-3.5 pl-6 pr-4">
+                            <div className="flex items-center gap-3">
+                              <Avatar name={app.candidateName || app.email} size={34} />
+                              <div className="min-w-0">
+                                <span className="font-bold text-ink block truncate group-hover:text-brand transition-colors">
+                                  {app.candidateName || app.email.split("@")[0]}
+                                </span>
+                                <span className="text-[11px] text-ink-muted truncate block">
+                                  {app.email} {app.city ? `• ${app.city}` : ""}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-medium text-ink">
+                            <span>{app.jobTitle}</span>
+                            {app.department && (
+                              <span className="text-[11px] text-ink-muted block">{app.department}</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-ink-2 font-medium">
+                            {app.experience || "—"}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="space-y-0.5">
+                              <StagePill stage={app.stage} />
+                              {app.rejectionReason && (
+                                <span className="block text-[10px] text-rose-600 font-semibold truncate max-w-[140px]" title={app.rejectionReason}>
+                                  {app.rejectionReason}
+                                </span>
+                              )}
+                              {app.holdReason && (
+                                <span className="block text-[10px] text-amber-600 font-semibold truncate max-w-[140px]" title={app.holdReason}>
+                                  {app.holdReason}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <ScoreBadge score={app.score} threshold={threshold} />
+                          </td>
+                          <td className="py-3.5 px-4 text-ink-muted whitespace-nowrap">
+                            {app.submittedAt}
+                          </td>
+                          <td className="py-3.5 pr-6 text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1.5">
+                              {(app.stage === "SUBMITTED" || app.stage === "IN_REVIEW") && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleStageAdvance("SHORTLISTED", app)}
+                                  className="rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-bold px-2.5 py-1 transition-colors flex items-center gap-1"
+                                  title="Shortlist Candidate & Send Assessment Invite"
+                                >
+                                  <span>✉️</span> Shortlist
+                                </button>
+                              )}
+                              {["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(app.stage) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const sent: SentEmailRecord = getSentEmails().find((e) => e.recipient === app.email) || {
+                                      id: `email-${app.id}`,
+                                      recipient: app.email,
+                                      recipientName: app.candidateName || "Candidate",
+                                      subject: `Assessment ready — ${app.jobTitle}`,
+                                      heading: `Congratulations ${app.candidateName || "Candidate"}, you've been shortlisted!`,
+                                      body: `We are impressed by your background and are pleased to invite you to the next stage for the ${app.jobTitle} opening at Brutallyhired. Please complete your proctored assessment before the deadline. It takes 45 minutes once you begin.`,
+                                      portalUrl: `${window.location.origin}/${tenant.slug}/applications/${app.id}/assessments`,
+                                      stage: app.stage as any,
+                                      sentAt: "Today",
+                                      status: "DELIVERED" as const,
+                                    };
+                                    setPreviewEmailModal(sent);
+                                  }}
+                                  className="rounded-lg bg-canvas hover:bg-line border border-line text-ink-2 text-xs font-semibold px-2 py-1 transition-colors flex items-center gap-1"
+                                  title="Inspect Sent Email Notification"
+                                >
+                                  <span>✉️</span> Email
+                                </button>
+                              )}
+                              {(app.stage === "ASSESSMENT" || app.stage === "SHORTLISTED") && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setScheduleTargetApp(app);
+                                    setScheduleModalOpen(true);
+                                  }}
+                                  className="rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 text-xs font-bold px-2 py-1 transition-colors flex items-center gap-1"
+                                  title="Schedule Technical Interview"
+                                >
+                                  <span>📅</span> Schedule
+                                </button>
+                              )}
+                              {app.stage === "INTERVIEW" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOfferApp(app);
+                                    setOfferModalOpen(true);
+                                  }}
+                                  className="rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-xs font-bold px-2 py-1 transition-colors flex items-center gap-1"
+                                  title="Prepare and Issue Formal Offer"
+                                >
+                                  <span>📜</span> Offer
+                                </button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setActiveReviewApp(app)}
+                                className="text-brand font-semibold hover:bg-brand/10"
+                              >
+                                Review Details →
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* TAB 3: JOBS */}
+        {activeTab === "jobs" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-ink">Job Openings</h1>
+                <p className="text-sm text-ink-muted">Manage active requisitions and candidate apply links.</p>
+              </div>
+              <Button icon={<Plus size={18} />} onClick={() => setNewJobOpen(true)}>
+                Post Job
+              </Button>
+            </div>
+
+            {jobs.length === 0 ? (
+              <div className="col-span-full rounded-2xl border border-dashed border-line bg-white p-12 text-center space-y-3">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-canvas text-ink-muted">
+                  <Briefcase size={24} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-ink">No Job Openings Posted</h3>
+                  <p className="text-xs text-ink-muted max-w-sm mx-auto">
+                    There are currently no active job listings. Click "Post Job" to create a new requisition with an auto-generated job description.
+                  </p>
+                </div>
+                <Button icon={<Plus size={16} />} onClick={() => setNewJobOpen(true)}>
+                  Post First Job
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {jobs.map((j) => (
+                  <Card key={j.id} className="space-y-3 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-start justify-between">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-soft text-brand">
+                          <Briefcase size={16} />
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <Pill tone={j.status === "OPEN" ? "teal" : "gray"}>{j.status}</Pill>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteJob(j.id)}
+                            title="Delete opening"
+                            className="text-ink-muted hover:text-rose-600 p-1 transition-colors"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <h3 className="mt-2 text-sm font-bold text-ink">{j.title}</h3>
+                      <p className="text-xs text-ink-muted">
+                        {[j.department || "Technology", j.location || "Remote", j.workplaceType || "HYBRID", j.experience].filter(Boolean).join(" • ")}
+                      </p>
+                      <p className="mt-2 text-xs leading-relaxed text-ink-2 whitespace-pre-line line-clamp-3">
+                        {j.description}
+                      </p>
+                    </div>
+                    <div className="border-t border-line pt-3 flex items-center justify-between text-xs">
+                      <span className="text-ink-muted"><strong>{j.applicantCount}</strong> applicants</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setViewJobModal(j)}
+                          className="flex items-center gap-1 font-semibold text-brand hover:underline"
+                        >
+                          <Eye size={13} />
+                          <span>View</span>
+                        </button>
+                        <span className="text-line-2">•</span>
+                        <Link
+                          to={`/${tenant.slug}/apply/${j.externalRef}`}
+                          className="font-semibold text-ink-2 hover:text-brand hover:underline"
+                        >
+                          Apply Link →
+                        </Link>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: ASSESSMENTS (Figure 4 Architecture) */}
+        {activeTab === "assessments" && (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold tracking-tight text-ink">
+                    Assessment & Secure Examination Architecture
+                  </h1>
+                  <Pill tone="teal">Figure 4 Compliant</Pill>
+                </div>
+                <p className="mt-1 text-sm text-ink-muted">
+                  BrutalAssessAI™ multi-signal telemetry, timed autosave exam runtime, and human reviewer adjudication queue.
+                </p>
+              </div>
+
+              {/* Mode Toggle */}
+              <div className="flex items-center gap-1.5 rounded-2xl border border-line bg-white p-1.5 shadow-sm">
+                <span className="text-[11px] font-semibold text-ink-muted px-2 uppercase tracking-wider">Mode:</span>
+                {[
+                  { id: "ALL", label: "All Modes" },
+                  { id: "STANDARD", label: "Standard Web" },
+                  { id: "HIGHER_ASSURANCE", label: "Higher Assurance" },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setAssessmentFilterMode(m.id as any)}
+                    className={`rounded-xl px-2.5 py-1 text-xs font-semibold transition-all ${
+                      assessmentFilterMode === m.id
+                        ? "bg-brand text-brand-fg shadow-sm"
+                        : "text-ink-2 hover:bg-canvas"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Visual Architecture Stepper banner (Figure 4) */}
+            <Card className="p-4 bg-canvas/40 border-line-soft">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-muted block mb-2">
+                Figure 4 — Exam Session, Proctoring & Human Adjudication Lifecycle
+              </span>
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-2 text-center text-xs">
+                {[
+                  { step: "1", title: "Invite & Expiry", desc: "3-day configurable deadline" },
+                  { step: "2", title: "Consent & Pre-Check", desc: "Webcam, screen, mic & latency" },
+                  { step: "3", title: "Exam Mode", desc: "Web proctoring vs secure client" },
+                  { step: "4", title: "Timed & Autosave", desc: "Continuous audit trail (15s)" },
+                  { step: "5", title: "AI Signals", desc: "Face, phone, monitor, blur" },
+                  { step: "6", title: "Evidence Queue", desc: "Risk flags & anomaly metrics" },
+                  { step: "7", title: "Human Adjudication", desc: "Pass / Retry / Review / Fail" },
+                ].map((s, idx) => (
+                  <div
+                    key={s.step}
+                    className="flex flex-col items-center justify-between rounded-xl border border-line bg-white p-2.5 shadow-xs"
+                  >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 font-bold text-brand text-[10px] mb-1">
+                      {s.step}
+                    </span>
+                    <span className="font-bold text-ink text-[11px]">{s.title}</span>
+                    <span className="text-[9px] text-ink-muted leading-tight mt-0.5">{s.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Sub-tab Navigation */}
+            <div className="flex border-b border-line space-x-6 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setAssessmentSubTab("QUEUE")}
+                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
+                  assessmentSubTab === "QUEUE"
+                    ? "border-brand text-brand"
+                    : "border-transparent text-ink-muted hover:text-ink"
+                }`}
+              >
+                <Shield size={15} />
+                <span>BrutalAssessAI™ Risk Flags & Evidence Queue</span>
+                <span className="rounded-full bg-rose-100 text-rose-800 px-2 py-0.5 text-[10px] font-bold">
+                  {assessmentSessions.filter((s) => s.status === "FLAGGED_REVIEW").length} Pending
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAssessmentSubTab("INVITES")}
+                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
+                  assessmentSubTab === "INVITES"
+                    ? "border-brand text-brand"
+                    : "border-transparent text-ink-muted hover:text-ink"
+                }`}
+              >
+                <Clock size={15} />
+                <span>Invites & Expiry Tracker (3-Day Deadline)</span>
+                <span className="rounded-full bg-brand/10 text-brand px-2 py-0.5 text-[10px] font-bold">
+                  {assessmentSessions.length} Active
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAssessmentSubTab("TEMPLATES")}
+                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
+                  assessmentSubTab === "TEMPLATES"
+                    ? "border-brand text-brand"
+                    : "border-transparent text-ink-muted hover:text-ink"
+                }`}
+              >
+                <File size={15} />
+                <span>Assessment Templates Library</span>
+              </button>
+            </div>
+
+            {/* SUBTAB 1: EVIDENCE & RISK FLAGS QUEUE */}
+            {assessmentSubTab === "QUEUE" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-ink-muted">Filter by Risk:</span>
+                    {[
+                      { id: "ALL", label: "All Sessions" },
+                      { id: "FLAGGED", label: "High Risk Flagged" },
+                      { id: "CLEAN", label: "Clean / Low Risk" },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setAssessmentRiskFilter(f.id as any)}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                          assessmentRiskFilter === f.id
+                            ? "bg-brand text-brand-fg"
+                            : "border border-line bg-white text-ink-2 hover:bg-canvas"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-ink-muted">
+                    Showing{" "}
+                    <strong>
+                      {
+                        assessmentSessions
+                          .filter((s) => assessmentFilterMode === "ALL" || s.mode === assessmentFilterMode)
+                          .filter(
+                            (s) =>
+                              assessmentRiskFilter === "ALL" ||
+                              (assessmentRiskFilter === "FLAGGED" ? s.riskLevel === "HIGH" : s.riskLevel === "LOW")
+                          ).length
+                      }
+                    </strong>{" "}
+                    sessions
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {assessmentSessions
+                    .filter((s) => assessmentFilterMode === "ALL" || s.mode === assessmentFilterMode)
+                    .filter(
+                      (s) =>
+                        assessmentRiskFilter === "ALL" ||
+                        (assessmentRiskFilter === "FLAGGED" ? s.riskLevel === "HIGH" : s.riskLevel === "LOW")
+                    )
+                    .map((session) => (
+                      <Card
+                        key={session.id}
+                        className={`p-4 space-y-4 border transition-all ${
+                          session.riskLevel === "HIGH"
+                            ? "border-rose-200 bg-rose-50/20"
+                            : "border-line bg-white"
+                        }`}
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="flex items-center gap-3">
+                            <Avatar name={session.candidateName} size={40} />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-ink text-sm">{session.candidateName}</h3>
+                                <Pill tone={session.mode === "HIGHER_ASSURANCE" ? "blue" : "teal"}>
+                                  {session.mode === "HIGHER_ASSURANCE" ? "Secure Client (OS)" : "Web Proctoring"}
+                                </Pill>
+                                {session.adjudication ? (
+                                  <Pill
+                                    tone={
+                                      session.adjudication === "PASS"
+                                        ? "teal"
+                                        : session.adjudication === "FAIL"
+                                        ? "red"
+                                        : "amber"
+                                    }
+                                  >
+                                    Adjudicated: {session.adjudication}
+                                  </Pill>
+                                ) : (
+                                  <Pill tone="amber" dot>
+                                    Awaiting Decision
+                                  </Pill>
+                                )}
+                              </div>
+                              <span className="text-xs text-ink-muted">
+                                {session.assessmentTitle} • Applied for {session.jobTitle}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {/* Live Risk Meter */}
+                            <div className="flex items-center gap-2 rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs">
+                              <span className="font-semibold text-ink-muted uppercase text-[10px]">AI Risk Score:</span>
+                              <span
+                                className={`font-bold px-1.5 py-0.5 rounded-md ${
+                                  session.riskLevel === "HIGH"
+                                    ? "bg-rose-100 text-rose-800"
+                                    : "bg-emerald-100 text-emerald-800"
+                                }`}
+                              >
+                                {session.riskScore}/100 ({session.riskLevel})
+                              </span>
+                            </div>
+
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setActiveInspectSession(session)}
+                              icon={<Eye size={14} />}
+                            >
+                              Inspect Audit Trail
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* AI Signal Breakdown Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2 border-t border-line/60 text-xs">
+                          <div className="rounded-lg bg-canvas p-2 space-y-0.5">
+                            <span className="text-[10px] font-semibold text-ink-muted uppercase block">Face Visibility</span>
+                            <span className={`font-bold block ${session.aiSignals.faceVisibilityPct < 85 ? "text-rose-600" : "text-emerald-700"}`}>
+                              {session.aiSignals.faceVisibilityPct}% Tracking
+                            </span>
+                          </div>
+
+                          <div className="rounded-lg bg-canvas p-2 space-y-0.5">
+                            <span className="text-[10px] font-semibold text-ink-muted uppercase block">Extra Persons</span>
+                            <span className={`font-bold block ${session.aiSignals.extraPersonsCount > 0 ? "text-rose-600" : "text-ink"}`}>
+                              {session.aiSignals.extraPersonsCount === 0 ? "None detected ✓" : `${session.aiSignals.extraPersonsCount} detected ⚠️`}
+                            </span>
+                          </div>
+
+                          <div className="rounded-lg bg-canvas p-2 space-y-0.5">
+                            <span className="text-[10px] font-semibold text-ink-muted uppercase block">Phone Detection</span>
+                            <span className={`font-bold block ${session.aiSignals.phoneDetected ? "text-rose-600" : "text-emerald-700"}`}>
+                              {session.aiSignals.phoneDetected ? "Phone in frame ⚠️" : "Clean ✓"}
+                            </span>
+                          </div>
+
+                          <div className="rounded-lg bg-canvas p-2 space-y-0.5">
+                            <span className="text-[10px] font-semibold text-ink-muted uppercase block">Display Monitors</span>
+                            <span className={`font-bold block ${session.aiSignals.monitorCount > 1 ? "text-amber-600" : "text-ink"}`}>
+                              {session.aiSignals.monitorCount === 1 ? "1 Primary Screen" : `${session.aiSignals.monitorCount} Displays`}
+                            </span>
+                          </div>
+
+                          <div className="rounded-lg bg-canvas p-2 space-y-0.5">
+                            <span className="text-[10px] font-semibold text-ink-muted uppercase block">Focus Loss / Tabs</span>
+                            <span className={`font-bold block ${session.aiSignals.focusLossCount > 0 ? "text-amber-600" : "text-ink"}`}>
+                              {session.aiSignals.focusLossCount === 0 ? "0 tab switches" : `${session.aiSignals.focusLossCount} switches`}
+                            </span>
+                          </div>
+
+                          <div className="rounded-lg bg-canvas p-2 space-y-0.5">
+                            <span className="text-[10px] font-semibold text-ink-muted uppercase block">Autosave Checkpoints</span>
+                            <span className="font-bold text-ink block">{session.autosaveCheckpoints} verified</span>
+                          </div>
+                        </div>
+
+                        {/* Adjudication Decisions Bar (Figure 4 Step 7) */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-line text-xs">
+                          <div className="text-ink-muted">
+                            {session.adjudicationNote ? (
+                              <span>
+                                <strong>Adjudication:</strong> {session.adjudicationNote}
+                              </span>
+                            ) : (
+                              <span>
+                                <strong>Action Required:</strong> Human reviewer decision to finalize stage progression.
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAdjudicate(session.id, "PASS")}
+                              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 transition-colors shadow-xs"
+                            >
+                              ✓ Pass & Advance to Interview
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjudicate(session.id, "RETRY")}
+                              className="rounded-lg border border-line-2 bg-white hover:bg-canvas text-ink font-semibold px-3 py-1.5 transition-colors"
+                            >
+                              ↺ Retry Exam
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjudicate(session.id, "MANUAL_REVIEW")}
+                              className="rounded-lg border border-amber-300 bg-amber-50 text-amber-800 font-semibold px-3 py-1.5 transition-colors"
+                            >
+                              Committee Review
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjudicate(session.id, "FAIL")}
+                              className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 transition-colors shadow-xs"
+                            >
+                              ✗ Fail & Disqualify
+                            </button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* SUBTAB 2: INVITES & EXPIRY TRACKER */}
+            {assessmentSubTab === "INVITES" && (
+              <Card className="overflow-hidden p-0">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-line bg-canvas/60 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                      <th className="py-3.5 pl-6 pr-4">Candidate</th>
+                      <th className="py-3.5 px-4">Assessment Challenge</th>
+                      <th className="py-3.5 px-4">Mode</th>
+                      <th className="py-3.5 px-4">3-Day Deadline Expiry</th>
+                      <th className="py-3.5 px-4">Pre-Check System Test</th>
+                      <th className="py-3.5 pr-6 text-right">Invite Link</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line-soft">
+                    {assessmentSessions.map((session) => (
+                      <tr key={session.id} className="hover:bg-canvas/40 transition-colors">
+                        <td className="py-3.5 pl-6 pr-4 font-bold text-ink">
+                          {session.candidateName}
+                          <span className="block font-normal text-ink-muted text-[11px]">{session.jobTitle}</span>
+                        </td>
+                        <td className="py-3.5 px-4 font-medium text-ink">
+                          {session.assessmentTitle}
+                          <span className="block text-ink-muted text-[11px]">{session.durationMins} minutes</span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <Pill tone={session.mode === "HIGHER_ASSURANCE" ? "blue" : "teal"}>
+                            {session.mode === "HIGHER_ASSURANCE" ? "Secure Client" : "Standard Web"}
+                          </Pill>
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-amber-700">
+                          {session.expiresIn}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <span className="text-emerald-700 font-semibold" title="Webcam, screen share & audio passed">
+                              Consent ✓ • Cam ✓ • Screen ✓
+                            </span>
+                            <span className="text-ink-muted">• {session.systemTest.networkLatency}</span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 pr-6 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              alert(`Secure candidate exam link copied: https://${tenant.slug}.brutallyhired.com/exam/${session.id}`);
+                            }}
+                            className="font-semibold text-brand hover:underline"
+                          >
+                            Copy Link →
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
+
+            {/* SUBTAB 3: TEMPLATES LIBRARY */}
+            {assessmentSubTab === "TEMPLATES" && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {[
+                  {
+                    title: "Senior Full-Stack & Architecture Challenge",
+                    mins: 60,
+                    questions: 15,
+                    pass: 70,
+                    proctored: true,
+                    mode: "Standard Web / Secure Client",
+                    signals: "Webcam + Screen + Telemetry",
+                  },
+                  {
+                    title: "Distributed Systems & DB Design Quiz",
+                    mins: 45,
+                    questions: 10,
+                    pass: 65,
+                    proctored: true,
+                    mode: "Standard Web",
+                    signals: "Face Tracking + Autosave",
+                  },
+                  {
+                    title: "AI Strategy & Rubric Assessment",
+                    mins: 40,
+                    questions: 12,
+                    pass: 75,
+                    proctored: true,
+                    mode: "Standard Web",
+                    signals: "Continuous Telemetry",
+                  },
+                ].map((tpl) => (
+                  <Card key={tpl.title} className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Shield size={20} className="text-brand" />
+                      <Pill tone={tpl.proctored ? "teal" : "gray"}>
+                        {tpl.proctored ? "Proctored" : "Standard"}
+                      </Pill>
+                    </div>
+                    <h3 className="text-sm font-bold text-ink">{tpl.title}</h3>
+                    <p className="text-xs text-ink-muted">Mode: {tpl.mode} • {tpl.signals}</p>
+                    <div className="flex items-center gap-3 text-xs text-ink-muted border-t border-line pt-2">
+                      <span>{tpl.questions} Questions</span>
+                      <span>•</span>
+                      <span>{tpl.mins} Mins</span>
+                      <span>•</span>
+                      <span>Pass: {tpl.pass}%</span>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: INTERVIEWS */}
+        {activeTab === "interviews" && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-ink">Technical Interviews & LiveKit RTC</h1>
+                <p className="text-sm text-ink-muted">
+                  Configurable interview rounds, live WebRTC video rooms, panel evaluations, and stage progression.
+                </p>
+              </div>
+              <Button
+                icon={<Plus size={18} />}
+                onClick={() => {
+                  setScheduleTargetApp(applications[0] || null);
+                  setScheduleModalOpen(true);
+                }}
+              >
+                Schedule New Interview
+              </Button>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Card className="flex items-center gap-4 p-5">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-brand">
+                  <Video size={24} />
+                </span>
+                <div>
+                  <span className="text-xs font-semibold text-ink-muted block uppercase tracking-wider">Scheduled Rounds</span>
+                  <span className="font-display text-2xl font-bold text-ink">{interviews.length}</span>
+                </div>
+              </Card>
+              <Card className="flex items-center gap-4 p-5">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
+                  <Shield size={24} />
+                </span>
+                <div>
+                  <span className="text-xs font-semibold text-ink-muted block uppercase tracking-wider">SFU Audio/Video Engine</span>
+                  <span className="font-display text-base font-bold text-teal-800">LiveKit Cloud (Active)</span>
+                </div>
+              </Card>
+              <Card className="flex items-center gap-4 p-5">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
+                  <Users size={24} />
+                </span>
+                <div>
+                  <span className="text-xs font-semibold text-ink-muted block uppercase tracking-wider">Hiring Panels</span>
+                  <span className="font-display text-base font-bold text-ink">Arun K. & Chandra S.</span>
+                </div>
+              </Card>
+            </div>
+
+            {/* Scheduled Interviews Table */}
+            <Card className="space-y-4">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                    <th className="pb-3 pl-4">Candidate & Job</th>
+                    <th className="pb-3">Round Details</th>
+                    <th className="pb-3">Scheduled Time</th>
+                    <th className="pb-3">Panelists</th>
+                    <th className="pb-3 pr-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/60">
+                  {interviews.map((int) => (
+                    <tr key={int.id} className="hover:bg-canvas/50 transition-colors">
+                      <td className="py-3.5 pl-4 flex items-center gap-3">
+                        <Avatar name={int.candidateName} size={34} />
+                        <div>
+                          <span className="font-bold text-xs text-ink block">{int.candidateName}</span>
+                          <span className="text-[11px] text-ink-muted">{int.jobTitle}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5">
+                        <span className="font-semibold text-xs text-ink block">{int.roundName}</span>
+                        <span className="text-[11px] text-ink-muted">LiveKit Video & Audio Enabled</span>
+                      </td>
+                      <td className="py-3.5 text-xs font-medium text-brand">
+                        {int.scheduledAt}
+                      </td>
+                      <td className="py-3.5 text-xs text-ink-2">
+                        {int.interviewerName}
+                      </td>
+                      <td className="py-3.5 pr-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            to={`/${tenant.slug}/applications/app-101/interviews/round-1/join`}
+                            target="_blank"
+                            className="rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-bold px-3 py-1.5 transition-colors no-underline inline-flex items-center gap-1 shadow-xs"
+                          >
+                            <span>Join Video Call</span> ↗
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const matching = applications.find((a) => a.candidateName === int.candidateName) || applications[0];
+                              if (matching) {
+                                setOfferApp(matching);
+                                setOfferModalOpen(true);
+                              }
+                            }}
+                            className="rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-bold px-2.5 py-1.5 transition-colors"
+                          >
+                            Pass → Issue Offer
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        )}
+
+        {/* TAB: REPORTS & ANALYTICS */}
+        {activeTab === "reports" && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-ink">Recruitment Lifecycle Analytics & Reports</h1>
+                <p className="text-sm text-ink-muted">
+                  End-to-end recruitment funnel throughput, BrutalAssessAI™ examination integrity stats, and hiring performance.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const csvRows = [
+                      "Candidate Name,Email,Job Title,Stage,Score,Submitted At",
+                      ...applications.map(
+                        (a) => `"${a.candidateName}","${a.email}","${a.jobTitle}","${a.stage}",${a.score},"${a.submittedAt}"`
+                      ),
+                    ];
+                    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `Brutallyhired_Pipeline_Report_${new Date().toISOString().slice(0, 10)}.csv`;
+                    link.click();
+                  }}
+                >
+                  Export Pipeline (CSV)
+                </Button>
+                <Button
+                  onClick={() => {
+                    const auditRows = [
+                      "Session ID,Candidate Name,Job Title,Status,AI Risk Level,Face Visibility %,Extra Persons,Autosaves",
+                      ...assessmentSessions.map(
+                        (s) =>
+                          `"${s.id}","${s.candidateName}","${s.jobTitle}","${s.status}","${s.riskLevel}",${s.aiSignals.faceVisibilityPct},${s.aiSignals.extraPersonsCount},${s.autosaveCheckpoints}`
+                      ),
+                    ];
+                    const blob = new Blob([auditRows.join("\n")], { type: "text/csv" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `BrutalAssessAI_Proctoring_Audit_${new Date().toISOString().slice(0, 10)}.csv`;
+                    link.click();
+                  }}
+                >
+                  Download Proctoring Audit
+                </Button>
+              </div>
+            </div>
+
+            {/* Funnel KPI Cards (Diagram 1) */}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">1. Total Applied</span>
+                <span className="font-display text-2xl font-bold text-ink">{applications.length}</span>
+                <span className="text-[11px] text-teal-700 block">100% Top of Funnel</span>
+              </Card>
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">2. Shortlisted & Exam</span>
+                <span className="font-display text-2xl font-bold text-ink">
+                  {applications.filter((a) => ["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(a.stage)).length}
+                </span>
+                <span className="text-[11px] text-brand block">Pass Screening Policy</span>
+              </Card>
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">3. LiveKit Interviews</span>
+                <span className="font-display text-2xl font-bold text-ink">
+                  {applications.filter((a) => ["INTERVIEW", "OFFER", "HIRED"].includes(a.stage)).length}
+                </span>
+                <span className="text-[11px] text-teal-700 block">Assessment Qualified</span>
+              </Card>
+              <Card className="p-4 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">4. Offers & Hired</span>
+                <span className="font-display text-2xl font-bold text-emerald-700">
+                  {applications.filter((a) => ["OFFER", "HIRED", "ONBOARDING"].includes(a.stage)).length}
+                </span>
+                <span className="text-[11px] text-emerald-800 block">94% Acceptance Rate</span>
+              </Card>
+            </div>
+
+            {/* BrutalAssessAI™ Examination Quality & Telemetry Audit (Figure 4) */}
+            <Card className="space-y-4 p-5">
+              <div className="flex items-center justify-between border-b border-line pb-3">
+                <div className="flex items-center gap-2">
+                  <Shield size={20} className="text-brand" />
+                  <h3 className="font-bold text-base text-ink">BrutalAssessAI™ Examination Integrity & Audit Metrics</h3>
+                </div>
+                <span className="rounded-full bg-teal-100 text-teal-800 px-2.5 py-0.5 text-xs font-bold">
+                  98.6% Proctoring Reliability
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-1">
+                  <span className="font-bold text-ink block">Clean Examination Telemetry</span>
+                  <span className="text-xl font-bold text-teal-700">95.8%</span>
+                  <p className="text-ink-muted text-[11px]">Continuous webcam verified, 0 secondary persons, single display locked.</p>
+                </div>
+                <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-1">
+                  <span className="font-bold text-ink block">Average Assessment Score</span>
+                  <span className="text-xl font-bold text-brand">88.4 / 100</span>
+                  <p className="text-ink-muted text-[11px]">Timed 45-min full-stack coding & architecture evaluation.</p>
+                </div>
+                <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-1">
+                  <span className="font-bold text-ink block">Adjudication Turnaround</span>
+                  <span className="text-xl font-bold text-ink">1.8 Hours</span>
+                  <p className="text-ink-muted text-[11px]">Average human reviewer adjudication latency across risk queue.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Department Hiring Throughput */}
+            <Card className="space-y-4">
+              <h3 className="font-bold text-sm text-ink px-2">Department Throughput & Requisition Health</h3>
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                    <th className="pb-3 pl-2">Department</th>
+                    <th className="pb-3">Open Positions</th>
+                    <th className="pb-3">Applicants</th>
+                    <th className="pb-3">Avg Fit Score</th>
+                    <th className="pb-3 pr-2 text-right">Hired</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/60">
+                  <tr className="hover:bg-canvas/50">
+                    <td className="py-3 pl-2 font-bold text-ink">Engineering</td>
+                    <td className="py-3">3 Open</td>
+                    <td className="py-3">
+                      {applications.filter((a) => a.department === "Engineering").length} candidates
+                    </td>
+                    <td className="py-3 font-semibold text-teal-800">88.2 / 100</td>
+                    <td className="py-3 pr-2 text-right font-bold text-emerald-700">2 Hired</td>
+                  </tr>
+                  <tr className="hover:bg-canvas/50">
+                    <td className="py-3 pl-2 font-bold text-ink">Design & Product</td>
+                    <td className="py-3">2 Open</td>
+                    <td className="py-3">
+                      {applications.filter((a) => a.department === "Design" || a.department === "Product").length} candidates
+                    </td>
+                    <td className="py-3 font-semibold text-teal-800">85.0 / 100</td>
+                    <td className="py-3 pr-2 text-right font-bold text-emerald-700">1 Hired</td>
+                  </tr>
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        )}
+
+        {/* TAB 5: STAFF */}
+        {activeTab === "staff" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-ink">Team & Hiring Staff</h1>
+                <p className="text-sm text-ink-muted">Manage recruiters, hiring managers, and interviewers.</p>
+              </div>
+              <Button icon={<Plus size={18} />} onClick={() => setInviteStaffOpen(true)}>
+                Invite Member
+              </Button>
+            </div>
+
+            <Card className="space-y-4">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                    <th className="pb-3 pl-2">Name</th>
+                    <th className="pb-3">Title</th>
+                    <th className="pb-3">Role</th>
+                    <th className="pb-3 pr-2 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/60">
+                  {staff.map((s) => (
+                    <tr key={s.id} className="hover:bg-canvas/50">
+                      <td className="py-3 pl-2 flex items-center gap-3">
+                        <Avatar name={s.name} size={32} />
+                        <div>
+                          <span className="font-semibold text-xs text-ink block">{s.name}</span>
+                          <span className="text-[11px] text-ink-muted">{s.email}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 text-xs text-ink-2">{s.title}</td>
+                      <td className="py-3">
+                        <Pill tone={s.role === "ADMIN" ? "amber" : s.role === "RECRUITER" ? "blue" : "gray"}>
+                          {s.role}
+                        </Pill>
+                      </td>
+                      <td className="py-3 pr-2 text-right text-xs font-semibold text-ok">Active</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        )}
+
+        {/* TAB 6: SETTINGS */}
+        {activeTab === "settings" && (
+          <div className="space-y-6 max-w-3xl">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-ink">Organization Settings</h1>
+              <p className="text-sm text-ink-muted">Configure your branding, cutoff score threshold, and hiring parameters.</p>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-6">
+              <Card className="space-y-4">
+                <SectionTitle>Company Branding & Portal Colors</SectionTitle>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Company Name">
+                    <Input value={tenant.name} readOnly />
+                  </Field>
+
+                  <Field label="Organization Slug">
+                    <Input value={tenant.slug} readOnly />
+                  </Field>
+
+                  <Field label="Brand Accent Color (Hex)" hint="Updates buttons and highlights dynamically">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={brandHex}
+                        onChange={(e) => setBrandHex(e.target.value)}
+                        className="h-10 w-12 cursor-pointer rounded-lg border border-line bg-white p-1"
+                      />
+                      <Input value={brandHex} onChange={(e) => setBrandHex(e.target.value)} />
+                    </div>
+                  </Field>
+
+                  <Field label="Default Timezone">
+                    <Input value={tenant.timezone || "Asia/Kolkata"} readOnly />
+                  </Field>
+                </div>
+              </Card>
+
+              <Card className="space-y-4">
+                <SectionTitle>AI Scoring & Screening Cutoff Threshold</SectionTitle>
+
+                <Field
+                  label={`Threshold Score: ${threshold} / 100`}
+                  hint="Applications scoring below this cutoff are flagged for human recruiter evaluation."
+                >
+                  <input
+                    type="range"
+                    min={40}
+                    max={90}
+                    step={5}
+                    value={threshold}
+                    onChange={(e) => setThreshold(Number(e.target.value))}
+                    className="w-full accent-[rgb(var(--brand))] cursor-pointer py-2"
+                  />
+                </Field>
+              </Card>
+
+              <div className="flex items-center gap-3">
+                <Button type="submit">Save Changes</Button>
+                {settingsSaved && (
+                  <span className="text-xs font-semibold text-ok">✓ Settings updated!</span>
+                )}
+              </div>
+            </form>
+          </div>
+        )}
+      </main>
+
+      {/* MODAL: Review & Advance Candidate */}
+      <Modal
+        open={Boolean(activeReviewApp)}
+        onClose={() => setActiveReviewApp(null)}
+        title="Candidate Profile & Application Review"
+        subtitle={activeReviewApp ? `Applied for ${activeReviewApp.jobTitle} • ${activeReviewApp.submittedAt}` : ""}
+      >
+        {activeReviewApp && (
+          <div className="space-y-5 text-xs">
+            {/* Candidate Header Summary */}
+            <div className="flex items-center justify-between rounded-2xl border border-line bg-canvas p-4">
+              <div className="flex items-center gap-3.5">
+                <Avatar name={activeReviewApp.candidateName || activeReviewApp.email} size={44} />
+                <div className="space-y-0.5">
+                  <h3 className="text-base font-bold text-ink">
+                    {activeReviewApp.candidateName || activeReviewApp.email.split("@")[0]}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2 text-ink-muted text-[11px]">
+                    <a
+                      href={`mailto:${activeReviewApp.email}`}
+                      className="text-brand hover:underline flex items-center gap-1 font-medium"
+                    >
+                      <Mail size={12} />
+                      <span>{activeReviewApp.email}</span>
+                    </a>
+                    {activeReviewApp.phone && <span>• {activeReviewApp.phone}</span>}
+                    {activeReviewApp.city && <span>• {activeReviewApp.city}</span>}
+                    {activeReviewApp.experience && <span>• {activeReviewApp.experience} Exp</span>}
+                  </div>
+                </div>
+              </div>
+              <StagePill stage={activeReviewApp.stage} />
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl border border-line bg-white p-3 shadow-xs">
+                <span className="text-[10px] uppercase font-semibold text-ink-muted block">Applied Role</span>
+                <span className="mt-1 block font-bold text-ink text-xs truncate">{activeReviewApp.jobTitle}</span>
+              </div>
+              <div className="rounded-xl border border-line bg-white p-3 shadow-xs">
+                <span className="text-[10px] uppercase font-semibold text-ink-muted block">Match Score</span>
+                <span className="mt-1 block text-base font-bold text-brand">{activeReviewApp.score}/100</span>
+              </div>
+              <div className="rounded-xl border border-line bg-white p-3 shadow-xs">
+                <span className="text-[10px] uppercase font-semibold text-ink-muted block">Applied Date</span>
+                <span className="mt-1 block text-ink font-medium text-xs">{activeReviewApp.submittedAt}</span>
+              </div>
+            </div>
+
+            {/* Candidate Submitted Resume */}
+            <div className="rounded-xl border border-line bg-white p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+                  <File size={18} />
+                </span>
+                <div>
+                  <span className="font-semibold text-ink block text-xs">
+                    {activeReviewApp.resumeName || `${(activeReviewApp.candidateName || "Candidate").replace(/\s+/g, "_")}_Resume.pdf`}
+                  </span>
+                  <span className="text-[10px] text-ink-muted">Verified Candidate Attachment (PDF)</span>
+                </div>
+              </div>
+              <span className="rounded-lg bg-canvas px-2.5 py-1 text-[11px] font-semibold text-ink-2">
+                CV Verified ✓
+              </span>
+            </div>
+
+            {/* AI Screening Summary */}
+            {activeReviewApp.notes && (
+              <div className="rounded-xl border border-ok/20 bg-ok-soft/30 p-3.5 space-y-1.5">
+                <div className="flex items-center gap-1.5 font-bold text-ink">
+                  <Sparkle size={14} className="text-brand" />
+                  <span>Automated AI Screening Summary</span>
+                </div>
+                <p className="leading-relaxed text-ink-2">{activeReviewApp.notes}</p>
+                <div className="mt-1 flex items-center gap-4 text-[11px] text-ink-muted border-t border-ok/10 pt-1.5">
+                  <span>Hard criteria match: <strong className="text-ink">{activeReviewApp.hardScore ?? 48} pts</strong></span>
+                  <span>Preferred criteria match: <strong className="text-ink">{activeReviewApp.preferredScore ?? 38} pts</strong></span>
+                </div>
+              </div>
+            )}
+
+            {/* Recruiter Hiring Notes */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted block">
+                Recruiter Evaluation Notes
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Add hiring team feedback or evaluation notes for this candidate..."
+                value={stageNote}
+                onChange={(e) => setStageNote(e.target.value)}
+                className="w-full rounded-xl border border-line bg-canvas p-2.5 text-xs text-ink focus:border-brand focus:outline-none"
+              />
+            </div>
+
+            {/* BrutalEngine™ Score Policy & Screening Review (Diagram 1) */}
+            <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-ink uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Sparkle size={14} className="text-brand" />
+                  <span>BrutalEngine™ Score Policy Check</span>
+                </span>
+                <span className="text-[11px] text-ink-muted">Cutoff Threshold: {threshold}/100</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeReviewApp.score >= threshold ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
+                    ✓ Meets Score Policy ({activeReviewApp.score} ≥ {threshold})
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-800">
+                    ⚠️ Below Score Cutoff ({activeReviewApp.score} &lt; {threshold}) — Requires HR override or Reject
+                  </span>
+                )}
+                <span className="text-xs text-ink-muted">• 3-Day Screening Window Active</span>
+              </div>
+            </div>
+
+            {/* Terminal Status Banner (If Rejected or On Hold) */}
+            {activeReviewApp.stage === "REJECTED" && (
+              <div className="rounded-xl border border-rose-300 bg-rose-50 p-3.5 space-y-2 text-rose-900">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <Alert size={14} className="text-rose-600" />
+                    <span>Candidate Rejected (Terminal State)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRestoreCandidate}
+                    className="text-xs font-semibold text-rose-800 underline hover:text-rose-950"
+                  >
+                    Restore Candidate to Pipeline
+                  </button>
+                </div>
+                <p className="text-xs font-medium">
+                  <strong>Rejection Reason:</strong> {activeReviewApp.rejectionReason || "Score below policy / HR decision"}
+                </p>
+              </div>
+            )}
+
+            {activeReviewApp.stage === "ON_HOLD" && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 space-y-2 text-amber-900">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <Clock size={14} className="text-amber-600" />
+                    <span>Candidate Placed On Hold</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRestoreCandidate}
+                    className="text-xs font-semibold text-amber-800 underline hover:text-amber-950"
+                  >
+                    Restore Candidate to Pipeline
+                  </button>
+                </div>
+                <p className="text-xs font-medium">
+                  <strong>Hold Reason:</strong> {activeReviewApp.holdReason || "Awaiting screening responses / batch hold"}
+                </p>
+              </div>
+            )}
+
+            {/* Stage Progression Pipeline (Diagram 1) */}
+            <div className="border-t border-line pt-4 space-y-2">
+              <span className="font-bold text-ink uppercase tracking-wider text-[11px] block">
+                Progress Candidate Lifecycle Stage
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { target: "SUBMITTED", label: "Submitted" },
+                  { target: "IN_REVIEW", label: "Under Review (3-day deadline)" },
+                  { target: "SHORTLISTED", label: "Shortlisted" },
+                  { target: "ASSESSMENT", label: "Assessment (BrutalAssessAI™)" },
+                  { target: "INTERVIEW", label: "LiveKit Interview" },
+                  { target: "OFFER", label: "Offer" },
+                  { target: "ONBOARDING", label: "Onboarding" },
+                  { target: "HIRED", label: "Hired" },
+                ].map((s) => (
+                  <button
+                    key={s.target}
+                    type="button"
+                    disabled={activeReviewApp.stage === s.target}
+                    onClick={() => handleStageAdvance(s.target)}
+                    className={`rounded-lg px-3 py-1.5 font-semibold transition-all ${
+                      activeReviewApp.stage === s.target
+                        ? "bg-brand text-white shadow-sm ring-1 ring-brand cursor-default"
+                        : "border border-line-2 bg-white text-ink-2 hover:bg-canvas"
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Direct Action Hub for Interviews & Offers */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScheduleTargetApp(activeReviewApp);
+                    setScheduleModalOpen(true);
+                  }}
+                  className="rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 font-bold px-3 py-1.5 text-xs transition-colors flex items-center gap-1.5"
+                >
+                  <span>📅</span> Schedule Interview Round
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOfferApp(activeReviewApp);
+                    setOfferModalOpen(true);
+                  }}
+                  className="rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 font-bold px-3 py-1.5 text-xs transition-colors flex items-center gap-1.5"
+                >
+                  <span>📜</span> Prepare & Issue Formal Offer
+                </button>
+              </div>
+            </div>
+
+            {/* Real-time Email Notification & Portal Link Banner */}
+            {(emailNotice || ["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(activeReviewApp.stage)) && (
+              <div className="rounded-xl border border-teal-200 bg-teal-50/80 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-teal-900 text-xs flex items-center gap-1.5">
+                    <span className="text-base">✉️</span>
+                    <span>
+                      {emailNotice ? "Real-time Email Dispatched" : "Milestone Email Active"} to{" "}
+                      <strong>{emailNotice?.recipient || activeReviewApp.email}</strong>
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sent: SentEmailRecord = getSentEmails().find((e) => e.recipient === activeReviewApp.email) || {
+                        id: `email-${activeReviewApp.id}`,
+                        recipient: activeReviewApp.email,
+                        recipientName: activeReviewApp.candidateName || "Candidate",
+                        subject: `Assessment ready — ${activeReviewApp.jobTitle}`,
+                        heading: `Congratulations ${activeReviewApp.candidateName || "Candidate"}, you've been shortlisted!`,
+                        body: `We are impressed by your background and are pleased to invite you to the next stage for the ${activeReviewApp.jobTitle} opening at Brutallyhired. Please complete your proctored assessment before the deadline. It takes 45 minutes once you begin.`,
+                        portalUrl: `${window.location.origin}/${tenant.slug}/applications/${activeReviewApp.id}/assessments`,
+                        stage: activeReviewApp.stage as any,
+                        sentAt: "Today",
+                        status: "DELIVERED" as const,
+                      };
+                      setPreviewEmailModal(sent);
+                    }}
+                    className="text-xs font-bold text-teal-800 underline hover:text-teal-950 flex items-center gap-1"
+                  >
+                    <span>Inspect Sent Email</span> ↗
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-teal-200/60">
+                  <div className="text-[11px] text-teal-900">
+                    <span className="font-semibold">Candidate Portal Link: </span>
+                    <span className="font-mono text-teal-800">
+                      {window.location.origin}/{tenant.slug}/applications/{activeReviewApp.id}/
+                      {activeReviewApp.stage === "INTERVIEW"
+                        ? "interviews"
+                        : activeReviewApp.stage === "OFFER"
+                        ? "offer"
+                        : activeReviewApp.stage === "HIRED"
+                        ? "onboarding"
+                        : "assessments"}
+                    </span>
+                  </div>
+                  <a
+                    href={`${window.location.origin}/${tenant.slug}/applications/${activeReviewApp.id}/${
+                      activeReviewApp.stage === "INTERVIEW"
+                        ? "interviews"
+                        : activeReviewApp.stage === "OFFER"
+                        ? "offer"
+                        : activeReviewApp.stage === "HIRED"
+                        ? "onboarding"
+                        : "assessments"
+                    }`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-[11px] font-bold px-3 py-1.5 transition-colors no-underline inline-flex items-center gap-1 shadow-xs"
+                  >
+                    <span>Open Candidate View</span> ↗
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Negative / Hold Branch (Diagram 1: "Rejected / hold + reason") */}
+            <div className="rounded-xl border border-line bg-canvas/60 p-3.5 space-y-2.5">
+              <span className="font-bold text-ink uppercase tracking-wider text-[11px] block">
+                Negative / Hold Decisions (With Recorded Reason)
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectActionType("REJECTED");
+                    setSelectedRejectReason(REJECTION_REASONS[0]?.label || "Score below policy");
+                    setRejectModalOpen(true);
+                  }}
+                  className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold px-3.5 py-1.5 transition-colors shadow-xs"
+                >
+                  Reject Candidate + Reason
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectActionType("ON_HOLD");
+                    setSelectedRejectReason(HOLD_REASONS[0]?.label || "Under review");
+                    setRejectModalOpen(true);
+                  }}
+                  className="rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold px-3.5 py-1.5 transition-colors"
+                >
+                  Place On Hold + Reason
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-line pt-3">
+              <Button variant="ghost" onClick={() => setActiveReviewApp(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL: View Job Details */}
+      <Modal
+        open={Boolean(viewJobModal)}
+        onClose={() => setViewJobModal(null)}
+        title={viewJobModal?.title || "Job Details"}
+        subtitle={[
+          viewJobModal?.department || "Technology",
+          viewJobModal?.location || "Remote",
+          viewJobModal?.workplaceType || "HYBRID",
+          viewJobModal?.experience ? `Exp: ${viewJobModal.experience}` : null,
+        ]
+          .filter(Boolean)
+          .join(" • ")}
+      >
+        {viewJobModal && (
+          <div className="space-y-5">
+            {/* Highlights pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Pill tone={viewJobModal.status === "OPEN" ? "teal" : "gray"}>
+                Status: {viewJobModal.status}
+              </Pill>
+              <span className="rounded-lg border border-line bg-canvas px-2.5 py-1 text-xs font-semibold text-ink-2">
+                Workplace: {viewJobModal.workplaceType || "HYBRID"}
+              </span>
+              {viewJobModal.experience && (
+                <span className="rounded-lg border border-line bg-canvas px-2.5 py-1 text-xs font-semibold text-ink-2">
+                  Experience: {viewJobModal.experience}
+                </span>
+              )}
+              {viewJobModal.keywords && (
+                <span className="rounded-lg border border-line bg-brand/5 text-brand px-2.5 py-1 text-xs font-semibold">
+                  Keywords: {viewJobModal.keywords}
+                </span>
+              )}
+              <span className="rounded-lg border border-line bg-canvas px-2.5 py-1 text-xs font-semibold text-ink-2">
+                Applicants: {viewJobModal.applicantCount}
+              </span>
+            </div>
+
+            {/* Candidate Apply Link Card */}
+            <div className="flex items-center justify-between rounded-xl border border-line bg-canvas p-3 text-xs">
+              <div className="min-w-0 pr-3">
+                <span className="font-semibold text-ink block">Public Candidate Apply URL:</span>
+                <span className="text-ink-muted truncate block font-mono text-[11px]">
+                  /{tenant.slug}/apply/{viewJobModal.externalRef}
+                </span>
+              </div>
+              <Link
+                to={`/${tenant.slug}/apply/${viewJobModal.externalRef}`}
+                className="flex items-center gap-1 font-bold text-brand hover:underline shrink-0"
+              >
+                <span>Open Form</span>
+                <ExternalLink size={13} />
+              </Link>
+            </div>
+
+            {/* Full Job Description */}
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted block">
+                Full Job Description
+              </span>
+              <div className="max-h-80 overflow-y-auto rounded-xl border border-line bg-canvas/40 p-4 text-xs leading-relaxed text-ink whitespace-pre-line font-sans select-text">
+                {viewJobModal.description}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between border-t border-line pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  handleDeleteJob(viewJobModal.id);
+                  setViewJobModal(null);
+                }}
+                className="text-xs font-semibold text-rose-600 hover:underline"
+              >
+                Delete Opening
+              </button>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" onClick={() => setViewJobModal(null)}>
+                  Close
+                </Button>
+                <Link
+                  to={`/${tenant.slug}/apply/${viewJobModal.externalRef}`}
+                  className="rounded-xl bg-brand px-3.5 py-2 text-xs font-bold text-brand-fg no-underline hover:opacity-90 transition-opacity"
+                >
+                  Candidate Apply View →
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL: Create New Job (Diagram 1 Step 1: Role + Keywords + Selected Sites) */}
+      <Modal
+        open={newJobOpen}
+        onClose={() => {
+          setNewJobOpen(false);
+          setGenerateError("");
+        }}
+        title="Post New Job Opening"
+        subtitle="Step 1: HR creates role + keywords. Step 2: AI drafts JD. Step 3: Publish to selected sites."
+      >
+        <form onSubmit={handleCreateJob} className="space-y-4">
+          {generateError && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-800">
+              <Alert size={15} className="shrink-0 text-rose-600 mt-0.5" />
+              <span>{generateError}</span>
+            </div>
+          )}
+
+          <Field label="Job Title" htmlFor="job-title-input">
+            <Input
+              id="job-title-input"
+              placeholder="e.g. Senior Software Architect"
+              value={newJobTitle}
+              onChange={(e) => setNewJobTitle(e.target.value)}
+              required
+            />
+          </Field>
+
+          {/* Role Keywords Input (Diagram 1: "HR creates role + keywords") */}
+          <Field label="Role Keywords & Core Competencies" htmlFor="job-keywords-input" hint="Required technical skills, domain expertise, and frameworks">
+            <Input
+              id="job-keywords-input"
+              placeholder="e.g. TypeScript, React, Node.js, Distributed Systems, PostgreSQL"
+              value={newJobKeywords}
+              onChange={(e) => setNewJobKeywords(e.target.value)}
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Department" htmlFor="job-dept-input">
+              <Input
+                id="job-dept-input"
+                placeholder="e.g. Engineering"
+                value={newJobDept}
+                onChange={(e) => setNewJobDept(e.target.value)}
+              />
+            </Field>
+
+            <Field label="Experience" htmlFor="job-exp-input">
+              <Input
+                id="job-exp-input"
+                placeholder="e.g. 3-5 years or 5+ years"
+                value={newJobExp}
+                onChange={(e) => setNewJobExp(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Workplace Type" htmlFor="job-mode-select">
+              <Select
+                id="job-mode-select"
+                value={newJobWorkplace}
+                onChange={(e) => setNewJobWorkplace(e.target.value as any)}
+              >
+                <option value="HYBRID">Hybrid</option>
+                <option value="REMOTE">Remote</option>
+                <option value="ONSITE">On-site</option>
+              </Select>
+            </Field>
+
+            <Field label="Location" htmlFor="job-loc-input">
+              <Input
+                id="job-loc-input"
+                placeholder="e.g. Bangalore, India"
+                value={newJobLoc}
+                onChange={(e) => setNewJobLoc(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {/* Publish to Selected Sites (Diagram 1 Step 3) */}
+          <div className="space-y-1.5 pt-1">
+            <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted block">
+              Publish to Selected Sites
+            </label>
+            <div className="flex flex-wrap gap-2 text-xs">
+              {["Brutallyhired Portal", "LinkedIn", "Indeed", "Glassdoor"].map((channel) => {
+                const selected = newJobChannels.includes(channel);
+                return (
+                  <button
+                    key={channel}
+                    type="button"
+                    onClick={() => {
+                      if (selected) {
+                        setNewJobChannels(newJobChannels.filter((c) => c !== channel));
+                      } else {
+                        setNewJobChannels([...newJobChannels, channel]);
+                      }
+                    }}
+                    className={`rounded-lg px-2.5 py-1 font-semibold transition-all ${
+                      selected
+                        ? "bg-brand text-brand-fg shadow-xs"
+                        : "border border-line bg-white text-ink-muted hover:text-ink"
+                    }`}
+                  >
+                    {selected ? "✓ " : "+ "}
+                    {channel}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between">
+              <label htmlFor="job-desc-textarea" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                Job Description (AI Drafted)
+              </label>
+              <button
+                type="button"
+                onClick={handleAutoGenerateDesc}
+                disabled={!newJobTitle.trim()}
+                className="flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand/5 px-2.5 py-1 text-xs font-semibold text-brand hover:bg-brand hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Sparkle size={13} />
+                <span>Auto-Generate with AI</span>
+              </button>
+            </div>
+            <Textarea
+              id="job-desc-textarea"
+              rows={6}
+              placeholder="Fill in the role & keywords above, then click 'Auto-Generate with AI' to generate the JD..."
+              value={newJobDesc}
+              onChange={(e) => setNewJobDesc(e.target.value)}
+            />
+            {!newJobDesc.trim() ? (
+              <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 border border-amber-200">
+                ⚡ Fill in the fields & keywords above and click <strong>Auto-Generate with AI</strong> before publishing.
+              </p>
+            ) : (
+              <p className="text-[11px] text-emerald-800 bg-emerald-50 rounded-lg p-2 border border-emerald-200">
+                ✓ Job description generated with your role keywords. Review and edit above if needed.
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-line pt-3">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setNewJobOpen(false);
+                setGenerateError("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!newJobTitle.trim() || !newJobDesc.trim()}
+              title={
+                !newJobDesc.trim()
+                  ? "Click 'Auto-Generate with AI' to generate description first"
+                  : undefined
+              }
+            >
+              Publish Opening
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Reject or Hold Candidate with Explicit Reason (Diagram 1) */}
+      <Modal
+        open={rejectModalOpen}
+        onClose={() => setRejectModalOpen(false)}
+        title={rejectActionType === "REJECTED" ? "Reject Candidate Application" : "Place Candidate On Hold"}
+        subtitle={`Select an explicit reason to record for ${activeReviewApp?.candidateName || activeReviewApp?.email}.`}
+      >
+        <div className="space-y-4 text-xs">
+          <Field label="Select Explicit Reason">
+            <Select
+              value={selectedRejectReason}
+              onChange={(e) => setSelectedRejectReason(e.target.value)}
+            >
+              {(rejectActionType === "REJECTED" ? REJECTION_REASONS : HOLD_REASONS).map((r) => (
+                <option key={r.id} value={r.label}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="Additional Recruiter Notes (Optional)">
+            <Textarea
+              rows={3}
+              placeholder="Provide specific justification or notes for this decision..."
+              value={rejectCustomNote}
+              onChange={(e) => setRejectCustomNote(e.target.value)}
+            />
+          </Field>
+
+          <div className="flex justify-end gap-2 border-t border-line pt-3">
+            <Button variant="ghost" onClick={() => setRejectModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant={rejectActionType === "REJECTED" ? "danger" : "primary"}
+              onClick={handleConfirmRejectOrHold}
+            >
+              {rejectActionType === "REJECTED" ? "Confirm Rejection" : "Confirm Hold"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL: BrutalAssessAI™ Telemetry & Audit Evidence Inspector (Figure 4) */}
+      <Modal
+        open={Boolean(activeInspectSession)}
+        onClose={() => setActiveInspectSession(null)}
+        title="BrutalAssessAI™ Telemetry & Audit Evidence Inspector"
+        subtitle={
+          activeInspectSession
+            ? `${activeInspectSession.candidateName} • ${activeInspectSession.assessmentTitle} • ${activeInspectSession.mode}`
+            : ""
+        }
+      >
+        {activeInspectSession && (
+          <div className="space-y-5 text-xs">
+            {/* Header Anomaly Summary */}
+            <div className="flex items-center justify-between rounded-xl border border-line bg-canvas p-3.5">
+              <div>
+                <span className="text-[10px] font-semibold text-ink-muted uppercase block">Overall AI Anomaly Risk</span>
+                <span className={`text-base font-bold ${activeInspectSession.riskLevel === "HIGH" ? "text-rose-600" : "text-emerald-700"}`}>
+                  Risk Score: {activeInspectSession.riskScore}/100 ({activeInspectSession.riskLevel})
+                </span>
+              </div>
+              <Pill tone={activeInspectSession.mode === "HIGHER_ASSURANCE" ? "blue" : "teal"}>
+                {activeInspectSession.mode === "HIGHER_ASSURANCE" ? "Secure Exam Client (OS Controls)" : "Standard Web Proctoring"}
+              </Pill>
+            </div>
+
+            {/* AI Signal Deep-Dive */}
+            <div className="space-y-2">
+              <span className="font-bold text-ink uppercase tracking-wider text-[11px] block">
+                Figure 4 AI Proctoring Signals
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="rounded-lg border border-line p-2.5 space-y-1">
+                  <span className="text-[10px] text-ink-muted uppercase block">Face Visibility</span>
+                  <span className="font-bold text-ink">{activeInspectSession.aiSignals.faceVisibilityPct}% Tracking</span>
+                </div>
+                <div className="rounded-lg border border-line p-2.5 space-y-1">
+                  <span className="text-[10px] text-ink-muted uppercase block">Extra Persons</span>
+                  <span className={`font-bold ${activeInspectSession.aiSignals.extraPersonsCount > 0 ? "text-rose-600" : "text-emerald-700"}`}>
+                    {activeInspectSession.aiSignals.extraPersonsCount} Detected
+                  </span>
+                </div>
+                <div className="rounded-lg border border-line p-2.5 space-y-1">
+                  <span className="text-[10px] text-ink-muted uppercase block">Phone Detection</span>
+                  <span className={`font-bold ${activeInspectSession.aiSignals.phoneDetected ? "text-rose-600" : "text-emerald-700"}`}>
+                    {activeInspectSession.aiSignals.phoneDetected ? "Flagged (Confidence 89%)" : "Clean"}
+                  </span>
+                </div>
+                <div className="rounded-lg border border-line p-2.5 space-y-1">
+                  <span className="text-[10px] text-ink-muted uppercase block">Display Monitors</span>
+                  <span className="font-bold text-ink">{activeInspectSession.aiSignals.monitorCount} Display(s)</span>
+                </div>
+                <div className="rounded-lg border border-line p-2.5 space-y-1">
+                  <span className="text-[10px] text-ink-muted uppercase block">Focus Loss / Tabs</span>
+                  <span className="font-bold text-ink">{activeInspectSession.aiSignals.focusLossCount} tab switches</span>
+                </div>
+                <div className="rounded-lg border border-line p-2.5 space-y-1">
+                  <span className="text-[10px] text-ink-muted uppercase block">Network Interruptions</span>
+                  <span className="font-bold text-ink">{activeInspectSession.aiSignals.interruptionsCount} drops</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Audit Trail Timeline */}
+            <div className="space-y-2">
+              <span className="font-bold text-ink uppercase tracking-wider text-[11px] block">
+                Continuous Autosave & Audit Trail Stream
+              </span>
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-line bg-canvas p-3 space-y-2">
+                {activeInspectSession.auditTrail.map((ev, i) => (
+                  <div key={i} className="flex items-start gap-2.5 text-[11px]">
+                    <span className="font-mono text-ink-muted shrink-0">[{ev.time}]</span>
+                    <span
+                      className={`font-medium ${
+                        ev.tone === "danger"
+                          ? "text-rose-700 font-bold"
+                          : ev.tone === "warn"
+                          ? "text-amber-800"
+                          : "text-ink"
+                      }`}
+                    >
+                      {ev.event}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Adjudication actions inside inspector */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    handleAdjudicate(activeInspectSession.id, "PASS");
+                    setActiveInspectSession(null);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                >
+                  ✓ Pass Candidate
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    handleAdjudicate(activeInspectSession.id, "RETRY");
+                    setActiveInspectSession(null);
+                  }}
+                >
+                  ↺ Retry
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    handleAdjudicate(activeInspectSession.id, "FAIL");
+                    setActiveInspectSession(null);
+                  }}
+                >
+                  ✗ Fail Candidate
+                </Button>
+              </div>
+
+              <Button variant="ghost" onClick={() => setActiveInspectSession(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL: Invite Staff */}
+      <Modal
+        open={inviteStaffOpen}
+        onClose={() => setInviteStaffOpen(false)}
+        title="Invite Hiring Team Member"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setInviteStaffOpen(false);
+          }}
+          className="space-y-4"
+        >
+          <Field label="Email Address">
+            <Input
+              type="email"
+              placeholder="recruiter@company.com"
+              value={staffEmail}
+              onChange={(e) => setStaffEmail(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Role">
+            <Select value={staffRole} onChange={(e) => setStaffRole(e.target.value as any)}>
+              <option value="RECRUITER">Recruiter</option>
+              <option value="INTERVIEWER">Interviewer</option>
+              <option value="ADMIN">Admin</option>
+            </Select>
+          </Field>
+          <div className="flex justify-end gap-2 border-t border-line pt-3">
+            <Button variant="ghost" onClick={() => setInviteStaffOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">Send Invite</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Schedule Interview Round */}
+      <Modal
+        open={scheduleModalOpen}
+        onClose={() => setScheduleModalOpen(false)}
+        title="Schedule Technical Interview Round"
+        subtitle={scheduleTargetApp ? `Candidate: ${scheduleTargetApp.candidateName} (${scheduleTargetApp.jobTitle})` : ""}
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleConfirmScheduleInterview();
+          }}
+          className="space-y-4"
+        >
+          <Field label="Interview Round Title">
+            <Input
+              value={scheduleRoundName}
+              onChange={(e) => setScheduleRoundName(e.target.value)}
+              placeholder="e.g. Round 1: System Architecture & Technical Deep-Dive"
+              required
+            />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Assigned Panelist">
+              <Select value={scheduleInterviewer} onChange={(e) => setScheduleInterviewer(e.target.value)}>
+                <option value="Arun K. (Principal Architect)">Arun K. (Principal Architect)</option>
+                <option value="Chandra S. (Lead Software Engineer)">Chandra S. (Lead Software Engineer)</option>
+                <option value="Tanuja HR (Head of Talent)">Tanuja HR (Head of Talent)</option>
+              </Select>
+            </Field>
+            <Field label="Scheduled Date & Time">
+              <Input
+                value={scheduleDateTime}
+                onChange={(e) => setScheduleDateTime(e.target.value)}
+                placeholder="Tomorrow at 10:00 AM"
+                required
+              />
+            </Field>
+          </div>
+          <Field label="Panel Evaluation Focus & Prep Notes">
+            <Textarea
+              rows={3}
+              value={scheduleNotes}
+              onChange={(e) => setScheduleNotes(e.target.value)}
+              placeholder="System design scaling, distributed caching, idempotency, LiveKit room setup..."
+            />
+          </Field>
+          <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs text-blue-900 leading-relaxed">
+            ✉️ Scheduling this round will automatically update candidate to <strong>INTERVIEW</strong> stage and dispatch an interview invitation email with the LiveKit room link.
+          </div>
+          <div className="flex justify-end gap-2 border-t border-line pt-3">
+            <Button variant="ghost" onClick={() => setScheduleModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">Schedule Round & Notify Candidate</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Customize & Approve Formal Offer */}
+      <Modal
+        open={offerModalOpen}
+        onClose={() => setOfferModalOpen(false)}
+        title="Prepare & Approve Formal Job Offer"
+        subtitle={offerApp ? `Candidate: ${offerApp.candidateName} • ${offerApp.jobTitle}` : ""}
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleConfirmSendOffer();
+          }}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Annual Base Compensation">
+              <Input
+                value={offerBaseSalary}
+                onChange={(e) => setOfferBaseSalary(e.target.value)}
+                placeholder="e.g. ₹ 18,00,000 / year"
+                required
+              />
+            </Field>
+            <Field label="Joining Bonus">
+              <Input
+                value={offerBonus}
+                onChange={(e) => setOfferBonus(e.target.value)}
+                placeholder="e.g. ₹ 2,00,000"
+                required
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Stock / Equity Grant">
+              <Input
+                value={offerEquity}
+                onChange={(e) => setOfferEquity(e.target.value)}
+                placeholder="e.g. 5,000 RSUs (4-year vesting)"
+                required
+              />
+            </Field>
+            <Field label="Location & Workplace Type">
+              <Input
+                value={offerWorkplace}
+                onChange={(e) => setOfferWorkplace(e.target.value)}
+                placeholder="Visakhapatnam (Hybrid)"
+                required
+              />
+            </Field>
+          </div>
+          <Field label="Proposed Start Date">
+            <Input
+              value={offerStartDate}
+              onChange={(e) => setOfferStartDate(e.target.value)}
+              placeholder="e.g. 1st of upcoming month"
+              required
+            />
+          </Field>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-emerald-900 leading-relaxed">
+            ✉️ Approving this formal offer will immediately update candidate stage to <strong>OFFER</strong> and email the candidate their official letter with digital signing capabilities.
+          </div>
+          <div className="flex justify-end gap-2 border-t border-line pt-3">
+            <Button variant="ghost" onClick={() => setOfferModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+              Approve & Dispatch Offer Letter
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Inspect Sent Email */}
+      <Modal
+        open={Boolean(previewEmailModal)}
+        onClose={() => setPreviewEmailModal(null)}
+        title="Sent Email Notification Preview"
+        subtitle={previewEmailModal?.recipient ? `Delivered to: ${previewEmailModal.recipient}` : ""}
+      >
+        {previewEmailModal && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-line bg-canvas p-4 text-xs space-y-1.5 font-sans">
+              <div className="flex justify-between">
+                <span className="text-ink-muted font-medium">To:</span>
+                <span className="font-bold text-ink">{previewEmailModal.recipient} ({previewEmailModal.recipientName})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-ink-muted font-medium">From:</span>
+                <span className="font-medium text-ink">Brutallyhired Talent Team &lt;chandra2001ks@gmail.com&gt;</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-ink-muted font-medium">Sent At:</span>
+                <span className="text-ink-2">{previewEmailModal.sentAt}</span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-line-soft">
+                <span className="text-ink-muted font-medium">Subject:</span>
+                <strong className="text-ink font-bold">{previewEmailModal.subject}</strong>
+              </div>
+            </div>
+
+            {/* Rendered HTML Email Container */}
+            <div className="rounded-2xl border border-line-2 bg-[#F4F6FA] p-6 shadow-inner">
+              <div className="max-w-[500px] mx-auto bg-white rounded-xl border border-[#E9EDF3] p-6 space-y-4 shadow-sm">
+                <div className="flex items-center gap-2 font-bold text-ink text-base border-b border-line pb-3">
+                  <span className="h-6 w-6 rounded-lg bg-brand text-white flex items-center justify-center text-xs">BH</span>
+                  Brutallyhired
+                </div>
+                <h3 className="text-xl font-bold text-ink leading-snug">{previewEmailModal.heading}</h3>
+                <p className="text-sm leading-relaxed text-[#2A3647]">{previewEmailModal.body}</p>
+                
+                <div className="pt-2">
+                  <a
+                    href={previewEmailModal.portalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block bg-brand hover:bg-brand-hover text-white font-semibold text-sm px-5 py-2.5 rounded-lg no-underline shadow-xs"
+                  >
+                    Open candidate portal →
+                  </a>
+                </div>
+
+                <div className="pt-4 border-t border-line-soft text-[11px] text-[#5B6676]">
+                  You’re receiving this because you applied through Brutallyhired’s candidate portal.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-line pt-3">
+              <a
+                href={previewEmailModal.portalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1"
+              >
+                Launch Candidate View ↗
+              </a>
+              <Button variant="ghost" onClick={() => setPreviewEmailModal(null)}>
+                Close Preview
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}

@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { initials } from "@/lib/format";
+import { Pill, type Tone } from "./Card";
 import { Upload, X } from "./icons";
 
 export function ProgressRing({ value, total, size = 104, label, children }: { value: number; total: number; size?: number; label: string; children?: ReactNode }) {
@@ -116,6 +117,61 @@ export function TagInput({ value, onChange, label, max = 60 }: { value: string[]
           {t("apply.resume.add")}
         </button>
       </div>
+    </div>
+  );
+}
+
+export const STAGE_TONES: Record<string, Tone> = {
+  DRAFT: "gray",
+  SUBMITTED: "blue",
+  UNDER_REVIEW: "amber",
+  IN_REVIEW: "amber",
+  SHORTLISTED: "blue",
+  ASSESSMENT: "amber",
+  INTERVIEW: "blue",
+  OFFER: "teal",
+  ONBOARDING: "teal",
+  HIRED: "teal",
+  ON_HOLD: "amber",
+  REJECTED: "red",
+  NOT_SELECTED: "red",
+  WITHDRAWN: "gray",
+};
+
+export function StagePill({ stage }: { stage: string }) {
+  const tone = STAGE_TONES[stage] ?? "gray";
+  const label = stage.replace(/_/g, " ");
+  return (
+    <Pill tone={tone} dot>
+      {label}
+    </Pill>
+  );
+}
+
+export function ScoreBadge({
+  score,
+  threshold = 60,
+  max = 100,
+}: {
+  score?: number | null;
+  threshold?: number;
+  max?: number;
+}) {
+  if (score === undefined || score === null) {
+    return <span className="text-xs font-medium text-ink-muted">Not scored</span>;
+  }
+  const isPassing = score >= threshold;
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <span
+        className={clsx(
+          "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold",
+          isPassing ? "bg-ok-soft text-ok-ink" : "bg-danger-soft text-danger",
+        )}
+      >
+        {score}
+      </span>
+      <span className="text-[11px] text-ink-muted">/{max}</span>
     </div>
   );
 }

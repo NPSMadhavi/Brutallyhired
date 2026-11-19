@@ -11,6 +11,7 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_PORT: z.coerce.number().int().default(4000),
   WEB_ORIGIN: z.string().url(),
+  ADMIN_ORIGIN: z.string().url().default("http://localhost:5174"),
   API_ORIGIN: z.string().url(),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(14),

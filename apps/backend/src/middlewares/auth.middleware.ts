@@ -36,7 +36,8 @@ export function requireVerifiedUser(req: Request, _res: Response, next: NextFunc
 export const csrfGuard: RequestHandler = (req, _res, next) => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
   const origin = req.get("origin");
-  if (origin && origin !== new URL(env.WEB_ORIGIN).origin) return next(new HttpError(403, "bad_origin"));
+  const allowed = [new URL(env.WEB_ORIGIN).origin, new URL(env.ADMIN_ORIGIN).origin];
+  if (origin && !allowed.includes(origin)) return next(new HttpError(403, "bad_origin"));
   if (req.get("x-verity-csrf") !== "1") return next(new HttpError(403, "csrf_header_missing"));
   next();
 };

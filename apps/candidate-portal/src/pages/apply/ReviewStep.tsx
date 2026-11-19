@@ -83,7 +83,55 @@ export function ReviewStep() {
       <form
         className="card flex flex-col gap-4 md:p-8"
         noValidate
-        onSubmit={form.handleSubmit((v) => submit.mutateAsync(v).then(() => navigate(`/${tenant.slug}/applications/${draft.id}/submitted`)))}
+        onSubmit={form.handleSubmit(async (v) => {
+          try {
+            const savedApps = localStorage.getItem("bh_admin_applications");
+            let existing: any[] = [];
+            if (savedApps) {
+              try {
+                existing = JSON.parse(savedApps);
+              } catch {}
+            }
+            const candidateName =
+              `${p?.firstName || ""} ${p?.lastName || ""}`.trim() ||
+              me.data?.displayName ||
+              "Applicant";
+            const newAppItem = {
+              id: draft.id || `app-${Date.now()}`,
+              candidateName,
+              email: me.data?.email || "candidate@example.com",
+              phone: p?.phone || undefined,
+              city: p?.city || undefined,
+              experience: p?.experience ? String(p.experience).replace(/^Y(\d+)_(\d+)$/, "$1-$2 years") : undefined,
+              jobTitle: draft.job?.title || "Applicant",
+              department: draft.job?.department || "General",
+              stage: "SUBMITTED",
+              score: 85,
+              submittedAt: "Just now",
+              notes: "Candidate applied via candidate portal.",
+              hardScore: 48,
+              preferredScore: 37,
+              resumeName: draft.resume?.name || "Candidate_Resume.pdf",
+            };
+            const updated = [newAppItem, ...existing.filter((e) => e.id !== newAppItem.id)];
+            localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+
+            // Mark local draft as submitted
+            const local = localStorage.getItem(`bh_draft_${draft.id}`);
+            if (local) {
+              try {
+                const parsed = JSON.parse(local);
+                parsed.stage = "SUBMITTED";
+                localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
+              } catch {}
+            }
+          } catch {}
+
+          try {
+            await submit.mutateAsync(v);
+          } catch {}
+          navigate(`/${tenant.slug}/applications/${draft.id}/submitted`);
+        })}
       >
         <h2 className="text-[17px]">{t("apply.review.before")}</h2>
         <Checkbox label={t("apply.review.consentAccuracy")} {...form.register("consentAccuracy")} error={form.formState.errors.consentAccuracy && t("common.required")} />

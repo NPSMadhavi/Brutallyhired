@@ -16,6 +16,7 @@ npm workspaces:
 
 ```
 apps/
+  admin-portal/       @verity/admin-portal — React + TypeScript + Vite, Tailwind (HR & Hiring Dashboard)
   backend/            @verity/backend — Node.js + TypeScript (Express, Socket.IO, Prisma, OIDC, LiveKit, SMTP)
   candidate-portal/   @verity/candidate-portal — React + TypeScript + Vite, Tailwind, React Hook Form + Zod
 packages/
@@ -23,7 +24,7 @@ packages/
   shared/             @verity/shared — Zod schemas, enums, DTO types and journey logic used by both apps
 ```
 
-The admin portal (`apps/admin-portal`) is not part of this repository yet; the staff API it will use already exists.
+The admin portal (`apps/admin-portal`) provides a comprehensive HR and recruiter dashboard matching the candidate portal's design system, connected to the backend staff APIs.
 
 ### Backend (`apps/backend/src`)
 

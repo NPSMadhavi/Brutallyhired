@@ -5,17 +5,18 @@ import { Check } from "@/components/ui/icons";
 import { useFormat } from "@/lib/format";
 import { useEventText } from "./eventText";
 
-export function Updates({ events }: { events: PublicEvent[] }) {
+export function Updates({ events = [] }: { events?: PublicEvent[] }) {
   const { t } = useTranslation();
   const f = useFormat();
   const text = useEventText();
-  if (events.length === 0) return <p className="text-sm text-ink-muted">{t("overview.noUpdates")}</p>;
+  const safeEvents = Array.isArray(events) ? events : [];
+  if (safeEvents.length === 0) return <p className="text-sm text-ink-muted">{t("overview.noUpdates")}</p>;
   return (
     <ol className="flex flex-col">
-      {events.map((e, i) => {
+      {safeEvents.map((e, i) => {
         const { title, body } = text(e);
         const latest = i === 0;
-        const last = i === events.length - 1;
+        const last = i === safeEvents.length - 1;
         return (
           <li key={e.id} className="flex gap-4">
             <span className="w-16 shrink-0 pt-0.5 text-right text-[13px] text-ink-muted">{f.relative(e.createdAt)}</span>

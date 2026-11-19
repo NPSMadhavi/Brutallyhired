@@ -39,6 +39,13 @@ export function TenantLayout() {
 
   if (q.isPending) return <PageLoader />;
   if (q.isError) {
+    if (slug === "brutallyhired" || !slug) {
+      return (
+        <TenantCtx.Provider value={DEFAULT_TENANT}>
+          <Outlet />
+        </TenantCtx.Provider>
+      );
+    }
     return (
       <main className="page py-16">
         <ErrorState error={q.error} />

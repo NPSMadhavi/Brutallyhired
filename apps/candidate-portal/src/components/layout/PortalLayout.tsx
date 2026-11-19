@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useLogout, useMe, useNotifications, useOverview, useProfile } from "@/api/hooks";
-import { Bell, Lock, LogOut } from "@/components/ui/icons";
+import { Bell, Lock, LogOut, Shield } from "@/components/ui/icons";
 import { Avatar } from "@/components/ui/misc";
 import { useRealtime } from "@/hooks/useRealtime";
 import { BrandMark } from "./BrandMark";
@@ -75,6 +75,9 @@ export function PortalLayout() {
           </Link>
           {appId && <AppTabs appId={appId} />}
           <div className="flex items-center gap-2.5">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800">
+              Candidate Portal
+            </span>
             <Link
               to={`/${tenant.slug}/notifications`}
               className="relative flex h-11 w-11 items-center justify-center rounded-full border border-line text-ink-2 hover:bg-canvas"

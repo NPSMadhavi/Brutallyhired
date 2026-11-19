@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { PoweredBy } from "./BrandMark";
 import { useTenantCtx } from "./TenantContext";
 
@@ -12,7 +13,7 @@ export function Footer() {
           {t("common.copyright", { year: new Date().getFullYear(), tenant: tenant.name })}
           <PoweredBy />
         </span>
-        <nav className="flex gap-5" aria-label={t("common.help")}>
+        <nav className="flex items-center gap-5" aria-label={t("common.help")}>
           {tenant.privacyNoticeUrl && <a href={tenant.privacyNoticeUrl} target="_blank" rel="noreferrer" className="text-brand">{t("common.privacyNotice")}</a>}
           {tenant.termsUrl && <a href={tenant.termsUrl} target="_blank" rel="noreferrer" className="text-brand">{t("common.terms")}</a>}
           {tenant.supportEmail && <a href={`mailto:${tenant.supportEmail}`} className="text-brand">{t("common.help")}</a>}

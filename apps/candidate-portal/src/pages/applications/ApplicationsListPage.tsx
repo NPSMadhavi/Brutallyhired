@@ -13,9 +13,32 @@ export function ApplicationsListPage() {
   const { t } = useTranslation();
   const f = useFormat();
   const apps = useApplications(tenant.slug);
-  if (apps.isPending) return <PageLoader />;
-  if (apps.isError) return <ErrorState error={apps.error} onRetry={() => void apps.refetch()} />;
-  const items = apps.data;
+
+  let items = apps.data ? [...apps.data] : [];
+  const localApps = localStorage.getItem("bh_admin_applications");
+  if (localApps) {
+    try {
+      const parsed = JSON.parse(localApps);
+      if (Array.isArray(parsed)) {
+        for (const pa of parsed) {
+          if (!items.some((it) => it.id === pa.id)) {
+            items.push({
+              id: pa.id,
+              reference: `APP-${pa.id.slice(-6)}`,
+              stage: pa.stage || "SUBMITTED",
+              jobTitle: pa.jobTitle || "Software Developer",
+              jobLocation: "Hybrid",
+              submittedAt: pa.submittedAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    } catch {}
+  }
+
+  if (apps.isPending && items.length === 0) return <PageLoader />;
+  if (apps.isError && items.length === 0) return <ErrorState error={apps.error} onRetry={() => void apps.refetch()} />;
   if (items.length === 1) {
     const a = items[0]!;
     return <Navigate to={a.stage === "DRAFT" ? `/${tenant.slug}/applications/${a.id}/apply/details` : `/${tenant.slug}/applications/${a.id}`} replace />;

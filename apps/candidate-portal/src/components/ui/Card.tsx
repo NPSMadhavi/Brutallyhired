@@ -28,10 +28,33 @@ export const SectionTitle = ({ children, action, id }: { children: ReactNode; ac
   </div>
 );
 
-export const Fact = ({ label, value }: { label: string; value: ReactNode }) => (
-  <div className="flex flex-col gap-1 rounded-2xl bg-[#F7F9FC] px-4 py-3.5">
-    <span className="label-caps text-[11px]">{label}</span>
-    <strong className="text-[15px] font-semibold">{value}</strong>
+export const Fact = ({
+  label,
+  value,
+  sub,
+  icon,
+  trend,
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  icon?: ReactNode;
+  trend?: "up" | "down" | "neutral";
+}) => (
+  <div className="flex flex-col gap-1 rounded-2xl bg-[#F7F9FC] p-4 transition-all hover:bg-[#F2F5FA]">
+    <div className="flex items-center justify-between gap-2">
+      <span className="label-caps text-[11px]">{label}</span>
+      {icon && <span className="text-ink-muted">{icon}</span>}
+    </div>
+    <div className="mt-1 flex items-baseline gap-2">
+      <strong className="text-[24px] font-bold tracking-tight text-ink">{value}</strong>
+      {trend && (
+        <span className={clsx("text-xs font-semibold", trend === "up" ? "text-ok" : trend === "down" ? "text-danger" : "text-ink-muted")}>
+          {trend === "up" ? "↑" : trend === "down" ? "↓" : "•"}
+        </span>
+      )}
+    </div>
+    {sub && <span className="text-xs text-ink-muted">{sub}</span>}
   </div>
 );
 

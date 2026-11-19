@@ -24,9 +24,101 @@ export function OverviewPage() {
   const withdraw = useWithdraw(tenant.slug, appId);
   const [confirming, setConfirming] = useState(false);
 
-  if (q.isPending) return <PageLoader />;
-  if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
-  const o = q.data;
+  let o = q.data;
+  if (!o) {
+    const localDraft = localStorage.getItem(`bh_draft_${appId}`);
+    const localApps = localStorage.getItem("bh_admin_applications");
+    let matchingApp: any = null;
+    if (localApps) {
+      try {
+        const parsed = JSON.parse(localApps);
+        if (Array.isArray(parsed)) {
+          matchingApp = parsed.find((a: any) => a.id === appId);
+        }
+      } catch {}
+    }
+    if (localDraft || matchingApp) {
+      let draftParsed: any = {};
+      try {
+        if (localDraft) draftParsed = JSON.parse(localDraft);
+      } catch {}
+      const stage = matchingApp?.stage || draftParsed.stage || "SUBMITTED";
+      o = {
+        id: appId,
+        reference: draftParsed.reference || `APP-${appId.slice(-6)}`,
+        stage,
+        closed: stage === "REJECTED" || stage === "NOT_SELECTED" || stage === "WITHDRAWN",
+        job: draftParsed.job || { title: matchingApp?.jobTitle || "Software Developer", location: "Hybrid" },
+        submittedAt: new Date().toISOString(),
+        events: [
+          {
+            id: `ev-${appId}-sub`,
+            type: "application_submitted",
+            createdAt: draftParsed.submittedAt || new Date().toISOString(),
+            data: { jobTitle: matchingApp?.jobTitle || "Software Developer" },
+          },
+          ...(stage !== "SUBMITTED"
+            ? [
+                {
+                  id: `ev-${appId}-stage`,
+                  type:
+                    stage === "SHORTLISTED" || stage === "ASSESSMENT"
+                      ? "assessment_invited"
+                      : stage === "INTERVIEW"
+                      ? "interview_invited"
+                      : stage === "OFFER"
+                      ? "offer_sent"
+                      : stage === "HIRED"
+                      ? "hired"
+                      : "review_started",
+                  createdAt: new Date().toISOString(),
+                  data: { jobTitle: matchingApp?.jobTitle || "Software Developer" },
+                },
+              ]
+            : []),
+        ],
+        track: [
+          { key: "SUBMITTED", label: "Application Submitted", done: true, current: stage === "SUBMITTED" },
+          {
+            key: "IN_REVIEW",
+            label: "Under Review & Screening",
+            done: ["IN_REVIEW", "SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "ONBOARDING", "HIRED"].includes(stage),
+            current: stage === "IN_REVIEW",
+          },
+          {
+            key: "ASSESSMENT",
+            label: "BrutalAssessAI™ Assessment",
+            done: ["ASSESSMENT", "INTERVIEW", "OFFER", "ONBOARDING", "HIRED"].includes(stage),
+            current: stage === "ASSESSMENT",
+          },
+          {
+            key: "INTERVIEW",
+            label: "LiveKit Video Rounds",
+            done: ["INTERVIEW", "OFFER", "ONBOARDING", "HIRED"].includes(stage),
+            current: stage === "INTERVIEW",
+          },
+          {
+            key: "OFFER",
+            label: "Offer & Onboarding",
+            done: ["OFFER", "ONBOARDING", "HIRED"].includes(stage),
+            current: stage === "OFFER" || stage === "ONBOARDING" || stage === "HIRED",
+          },
+        ],
+        nextAction:
+          stage === "SHORTLISTED" || stage === "ASSESSMENT"
+            ? { kind: "ASSESSMENT", label: "Start BrutalAssessAI™ Examination", path: `/${tenant.slug}/applications/${appId}/assessments` }
+            : stage === "INTERVIEW"
+            ? { kind: "INTERVIEW", label: "Join Scheduled LiveKit Interview", path: `/${tenant.slug}/applications/${appId}/interviews` }
+            : stage === "OFFER"
+            ? { kind: "OFFER", label: "Review & Sign Formal Offer", path: `/${tenant.slug}/applications/${appId}/offer` }
+            : null,
+      } as any;
+    }
+  }
+
+  if (q.isPending && !o) return <PageLoader />;
+  if (q.isError && !o) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
+  if (!o) return <PageLoader />;
   const base = `/${tenant.slug}/applications/${o.id}`;
   const firstName = me.data?.displayName?.split(" ")[0];
   const canWithdraw = !o.closed && !["DRAFT", "HIRED"].includes(o.stage);
@@ -59,7 +151,7 @@ export function OverviewPage() {
             <h2 id="up-h" className="text-[17px]">{t("overview.updates")}</h2>
             <span className="text-[13px] text-ink-muted">{t("overview.newestFirst")}</span>
           </div>
-          <Updates events={o.events} />
+          <Updates events={o.events || []} />
         </section>
 
         <aside className="flex min-w-0 flex-[1_1_340px] flex-col gap-5">

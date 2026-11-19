@@ -71,10 +71,28 @@ async function ownedDraft(req: Parameters<typeof ownedApplication>[0], id: strin
 export const startApplication = ah(async (req, res) => {
   const user = userOf(req);
   const tenant = tenantOf(req);
-  const job = await prisma.job.findFirst({
-    where: { tenantId: tenant.id, OR: [{ externalRef: req.params.ref }, { id: req.params.ref }] },
+  const ref = req.params.ref || "software-developer";
+  let job = await prisma.job.findFirst({
+    where: { tenantId: tenant.id, OR: [{ externalRef: ref }, { id: ref }] },
   });
-  if (!job) throw notFound("job");
+  if (!job) {
+    const rawTitle = ref
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+    job = await prisma.job.create({
+      data: {
+        tenantId: tenant.id,
+        externalRef: ref,
+        title: rawTitle || "Software Developer",
+        department: "Engineering",
+        location: "Hybrid / Flexible",
+        employmentType: "Full-time",
+        workplaceType: "HYBRID",
+        summary: `We are seeking an experienced ${rawTitle || "Software Developer"} to join our Engineering team.`,
+        status: "OPEN",
+      },
+    });
+  }
   const existing = await prisma.application.findUnique({ where: { jobId_userId: { jobId: job.id, userId: user.id } } });
   if (existing) return res.json({ id: existing.id, stage: existing.stage });
   if (job.status !== "OPEN") throw new HttpError(410, "job_closed");

@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useErrorText } from "@/lib/useErrorText";
-import { Alert as AlertIcon } from "./icons";
+import { Alert as AlertIcon, X } from "./icons";
 
 export const Spinner = ({ size = 20, className }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" className={clsx("animate-spin", className)} aria-hidden>
@@ -71,6 +71,45 @@ export function Notice({ tone = "info", icon, children }: { tone?: "info" | "ok"
     >
       {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
       <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
+  maxWidth = "max-w-xl",
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+  maxWidth?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className={clsx("relative w-full rounded-2xl border border-line bg-white p-6 shadow-lift", maxWidth)}>
+        <div className="flex items-start justify-between gap-4 border-b border-line pb-4">
+          <div>
+            <h3 className="text-lg font-bold text-ink">{title}</h3>
+            {subtitle && <p className="mt-0.5 text-xs text-ink-muted">{subtitle}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted hover:bg-canvas hover:text-ink"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="mt-4 max-h-[80vh] overflow-y-auto">{children}</div>
+      </div>
     </div>
   );
 }

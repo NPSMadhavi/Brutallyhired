@@ -84,16 +84,26 @@ export function DetailsStep() {
     <form
       className="card flex flex-col gap-6 md:p-8"
       noValidate
-      onSubmit={form.handleSubmit((v) =>
+      onSubmit={form.handleSubmit((v) => {
+        const cleanProfile = {
+          ...v,
+          firstName: v.firstName.trim(),
+          lastName: v.lastName.trim(),
+          city: v.city.trim(),
+        };
+        const local = localStorage.getItem(`bh_draft_${draft.id}`);
+        if (local) {
+          try {
+            const parsed = JSON.parse(local);
+            parsed.profile = cleanProfile;
+            localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
+          } catch {}
+        }
         save
-          .mutateAsync({
-            ...v,
-            firstName: v.firstName.trim(),
-            lastName: v.lastName.trim(),
-            city: v.city.trim(),
-          })
-          .then(() => navigate(nextPath("details"))),
-      )}
+          .mutateAsync(cleanProfile)
+          .catch(() => {})
+          .finally(() => navigate(nextPath("details")));
+      })}
     >
       <Notice tone="info">{t("apply.details.signedInAs", { email: me.data?.email ?? "" })}</Notice>
       <Field label={t("apply.details.email")} htmlFor="email">

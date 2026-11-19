@@ -4,12 +4,14 @@ import { Link, type LinkProps } from "react-router-dom";
 import { Spinner } from "./feedback";
 
 type Variant = "primary" | "ghost" | "text" | "danger" | "dark" | "inverse";
-type Size = "md" | "lg";
+type Size = "sm" | "md" | "lg";
 
 const styles = (variant: Variant, size: Size, block?: boolean) =>
   clsx(
     "inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold transition-colors disabled:cursor-not-allowed disabled:border-line disabled:bg-line-soft disabled:text-ink-muted",
-    size === "lg" ? "min-h-[52px] rounded-[14px] px-6 text-[15px]" : "min-h-[44px] rounded-xl px-[18px] text-sm",
+    size === "sm" && "min-h-[36px] rounded-lg px-3 text-xs",
+    size === "lg" && "min-h-[52px] rounded-[14px] px-6 text-[15px]",
+    size === "md" && "min-h-[44px] rounded-xl px-[18px] text-sm",
     block && "w-full",
     variant === "primary" && "bg-brand text-brand-fg hover:brightness-95",
     variant === "dark" && "bg-ink text-white hover:bg-ink-2",

@@ -36,15 +36,26 @@ export function ApplyLayout() {
   const step = pathname.split("/").filter(Boolean).pop() ?? "details";
   const draft = useDraft(tenant.slug, appId);
 
-  if (draft.isPending) return <PageLoader />;
-  if (draft.isError) {
+  let d: ApplicationDraftDto | undefined = draft.data;
+  if (!d) {
+    const local = localStorage.getItem(`bh_draft_${appId}`);
+    if (local) {
+      try {
+        d = JSON.parse(local);
+      } catch {}
+    }
+  }
+
+  if (draft.isPending && !d) return <PageLoader />;
+  if (draft.isError && !d) {
     if (draft.error instanceof ApiError && draft.error.code === "already_submitted") {
       return <Navigate to={`/${tenant.slug}/applications/${appId}`} replace />;
     }
     return <main className="page py-16"><ErrorState error={draft.error} onRetry={() => void draft.refetch()} /></main>;
   }
 
-  const d = draft.data;
+  if (!d) return <PageLoader />;
+
   const steps: StepKey[] = ["details", "resume", ...(d.job.questions.length ? (["questions"] as const) : []), "review"];
   const current = steps.indexOf(step as StepKey);
   if (current === -1) return <Navigate to={`/${tenant.slug}/applications/${appId}/apply/details`} replace />;
