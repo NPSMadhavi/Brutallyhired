@@ -50,6 +50,26 @@ export const Settings = (p: P) => <svg {...base(p)}><circle cx="12" cy="12" r="3
 export const ExternalLink = (p: P) => <svg {...base(p)}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>;
 export const ChevronRight = (p: P) => <svg {...base(p)} strokeWidth={2}><path d="M9 18l6-6-6-6" /></svg>;
 export const Eye = (p: P) => <svg {...base(p)}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>;
+export const Copy = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+export const Share = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+  </svg>
+);
+export const Trash = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+  </svg>
+);
 
 export function ProviderLogo({ provider, size = 20 }: { provider: string; size?: number }) {
   const s = { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": true as const };

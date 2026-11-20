@@ -121,7 +121,14 @@ export function ApplyLayout() {
               <p className="text-[13px] text-ink-muted">{[tenant.name, d.job.location, d.job.employmentType].join(" · ")}</p>
               <details className="text-sm">
                 <summary className="cursor-pointer font-semibold text-brand">{t("apply.viewJob")}</summary>
-                <p className="mt-3 whitespace-pre-line leading-relaxed text-ink-2">{d.job.summary}</p>
+                {d.job.summary.includes("<") ? (
+                  <div
+                    className="mt-3 prose prose-sm max-w-none text-ink-2 leading-relaxed [&_h2]:text-sm [&_h2]:font-bold [&_h2]:text-ink [&_h2]:mt-3 [&_h2]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_p]:mb-2"
+                    dangerouslySetInnerHTML={{ __html: d.job.summary }}
+                  />
+                ) : (
+                  <p className="mt-3 whitespace-pre-line leading-relaxed text-ink-2">{d.job.summary}</p>
+                )}
               </details>
             </div>
             <div className="card flex items-start gap-3">

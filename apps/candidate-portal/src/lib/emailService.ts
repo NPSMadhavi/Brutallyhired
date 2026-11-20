@@ -16,6 +16,7 @@ export interface SentEmailRecord {
   stage: "SHORTLISTED" | "ASSESSMENT" | "INTERVIEW" | "OFFER" | "HIRED";
   sentAt: string;
   status: "DELIVERED" | "QUEUED";
+  attachmentName?: string;
 }
 
 export function getSentEmails(): SentEmailRecord[] {
@@ -45,6 +46,7 @@ export async function sendEmailNotification({
   tenantSlug = "brutallyhired",
   customHeading,
   customBody,
+  attachmentName,
 }: {
   to: string;
   recipientName: string;
@@ -54,6 +56,7 @@ export async function sendEmailNotification({
   tenantSlug?: string;
   customHeading?: string;
   customBody?: string;
+  attachmentName?: string;
 }): Promise<SentEmailRecord> {
   const fullPortalUrl = `${window.location.origin}${portalPath}`;
 
@@ -112,6 +115,7 @@ export async function sendEmailNotification({
     stage,
     sentAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " (Today)",
     status: "DELIVERED",
+    attachmentName,
   };
 
   // Attempt real backend email dispatch via Nodemailer

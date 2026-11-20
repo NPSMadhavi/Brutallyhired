@@ -16,13 +16,11 @@ export function AdminLoginPage({ onLoginSuccess }: AdminLoginPageProps) {
 
   // Expected credentials are read strictly from environment (.env) with default fallback
   const expectedEmail = (
-    import.meta.env.VITE_ADMIN_EMAIL ||
     import.meta.env.ADMIN_EMAIL ||
     "admin@brutallyhired.com"
   ).trim();
 
   const expectedPassword = (
-    import.meta.env.VITE_ADMIN_PASSWORD ||
     import.meta.env.ADMIN_PASSWORD ||
     "Admin@123456"
   ).trim();
@@ -128,7 +126,7 @@ export function AdminLoginPage({ onLoginSuccess }: AdminLoginPageProps) {
                   autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@brutallyhired.com"
+                  placeholder="Enter admin email"
                   className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 pl-10 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-all"
                 />
                 <span className="absolute left-3 top-3 text-ink-muted">
@@ -151,7 +149,7 @@ export function AdminLoginPage({ onLoginSuccess }: AdminLoginPageProps) {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 pl-10 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-all"
                 />
                 <span className="absolute left-3 top-3 text-ink-muted">
@@ -176,17 +174,7 @@ export function AdminLoginPage({ onLoginSuccess }: AdminLoginPageProps) {
             </button>
           </form>
 
-          <div className="pt-3 text-center border-t border-line space-y-2">
-            <span className="text-[11px] text-ink-muted block">
-              Default demo admin: <code className="bg-slate-100 px-1 py-0.5 rounded text-ink font-semibold">admin@brutallyhired.com</code> / <code className="bg-slate-100 px-1 py-0.5 rounded text-ink font-semibold">Admin@123456</code>
-            </span>
-            <a
-              href="http://localhost:5173/signin"
-              className="text-xs font-semibold text-brand hover:underline inline-block"
-            >
-              Are you a job candidate? Return to Candidate Sign In →
-            </a>
-          </div>
+          
         </div>
       </main>
 

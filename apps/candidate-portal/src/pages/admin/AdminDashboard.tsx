@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTenantCtx } from "@/components/layout/TenantContext";
 import { Button } from "@/components/ui/Button";
@@ -14,6 +14,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Copy,
   Dashboard,
   ExternalLink,
   Eye,
@@ -28,6 +29,7 @@ import {
   Plus,
   Search,
   Settings,
+  Share,
   Shield,
   Sparkle,
   Users,
@@ -38,7 +40,10 @@ import {
 import { Avatar, ScoreBadge, StagePill } from "@/components/ui/misc";
 import { applyBrand } from "@/lib/brand";
 import { initials } from "@/lib/format";
-import { generateJobDescription } from "@/lib/jobGenerator";
+import { generateJobDescription, generateJobDescriptionHtml } from "@/lib/jobGenerator";
+import { JobDescriptionEditor } from "./JobDescriptionEditor";
+import { BrutallyScoreModule } from "./BrutallyScoreModule";
+import { AssessmentRoundsStudio } from "./AssessmentRoundsStudio";
 import {
   sendEmailNotification,
   getSentEmails,
@@ -166,7 +171,7 @@ export function AdminDashboard() {
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "candidates" | "jobs" | "assessments" | "interviews" | "reports" | "staff" | "settings"
+    "dashboard" | "candidates" | "jobs" | "assessments" | "interviews" | "brutallyScore" | "staff" | "settings"
   >("dashboard");
   const [currentAdminRole, setCurrentAdminRole] = useState<"ADMIN" | "RECRUITER" | "INTERVIEWER">("ADMIN");
 
@@ -413,7 +418,88 @@ export function AdminDashboard() {
   ]);
   const [newJobWorkplace, setNewJobWorkplace] = useState<"REMOTE" | "HYBRID" | "ONSITE">("HYBRID");
   const [newJobDesc, setNewJobDesc] = useState("");
+  const [newJobDescHtml, setNewJobDescHtml] = useState("");
+  const [isJdEditorOpen, setIsJdEditorOpen] = useState(false);
+  const [hasDraftLoaded, setHasDraftLoaded] = useState(false);
   const [generateError, setGenerateError] = useState("");
+  const [copiedJobId, setCopiedJobId] = useState<string | null>(null);
+  const [shareJobModal, setShareJobModal] = useState<JobItem | null>(null);
+
+  const getJobApplyUrl = (j: JobItem) => {
+    return `${window.location.origin}/${tenant.slug}/apply/${j.externalRef}`;
+  };
+
+  const handleCopyJobLink = (j: JobItem) => {
+    const url = getJobApplyUrl(j);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).catch(() => {});
+    }
+    setCopiedJobId(j.id);
+    setTimeout(() => {
+      setCopiedJobId((prev) => (prev === j.id ? null : prev));
+    }, 2000);
+  };
+
+  const handleShareJob = (j: JobItem) => {
+    const url = getJobApplyUrl(j);
+    if (navigator?.share) {
+      navigator
+        .share({
+          title: `${j.title} at ${tenant.name}`,
+          text: `Apply for ${j.title} (${j.department || "Technology"} • ${j.location || "Remote"}):`,
+          url,
+        })
+        .catch((err) => {
+          if (err?.name !== "AbortError") {
+            setShareJobModal(j);
+          }
+        });
+    } else {
+      setShareJobModal(j);
+    }
+  };
+
+  // Restore saved job draft from localStorage & backend on mount
+  useEffect(() => {
+    const localDraft = localStorage.getItem("bh_admin_job_draft");
+    if (localDraft) {
+      try {
+        const parsed = JSON.parse(localDraft);
+        if (parsed.title) setNewJobTitle(parsed.title);
+        if (parsed.department) setNewJobDept(parsed.department);
+        if (parsed.location) setNewJobLoc(parsed.location);
+        if (parsed.experience) setNewJobExp(parsed.experience);
+        if (parsed.keywords) setNewJobKeywords(parsed.keywords);
+        if (parsed.workplaceType) setNewJobWorkplace(parsed.workplaceType);
+        if (parsed.channels && Array.isArray(parsed.channels)) setNewJobChannels(parsed.channels);
+        if (parsed.description) setNewJobDesc(parsed.description);
+        if (parsed.descriptionHtml) setNewJobDescHtml(parsed.descriptionHtml);
+        setHasDraftLoaded(true);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Also fetch latest draft from backend database
+    fetch(`/api/t/${tenant.slug}/jobs-draft`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.draft) {
+          const d = data.draft;
+          if (d.title && !newJobTitle) setNewJobTitle(d.title);
+          if (d.department && !newJobDept) setNewJobDept(d.department);
+          if (d.location && !newJobLoc) setNewJobLoc(d.location);
+          if (d.experienceText && !newJobExp) setNewJobExp(d.experienceText);
+          if (d.workplaceType && !newJobWorkplace) setNewJobWorkplace(d.workplaceType as any);
+          if (d.summary && !newJobDesc) {
+            setNewJobDesc(d.summary);
+            setNewJobDescHtml(d.summary);
+          }
+          setHasDraftLoaded(true);
+        }
+      })
+      .catch(() => undefined);
+  }, [tenant.slug]);
 
   const handleAutoGenerateDesc = () => {
     setGenerateError("");
@@ -421,7 +507,7 @@ export function AdminDashboard() {
       setGenerateError("Please enter a Job Title before generating the description.");
       return;
     }
-    const desc = generateJobDescription({
+    const plain = generateJobDescription({
       title: newJobTitle,
       department: newJobDept,
       location: newJobLoc,
@@ -429,7 +515,119 @@ export function AdminDashboard() {
       keywords: newJobKeywords,
       workplaceType: newJobWorkplace,
     });
-    setNewJobDesc(desc);
+    const html = generateJobDescriptionHtml({
+      title: newJobTitle,
+      department: newJobDept,
+      location: newJobLoc,
+      experience: newJobExp,
+      keywords: newJobKeywords,
+      workplaceType: newJobWorkplace,
+    });
+    setNewJobDesc(plain);
+    setNewJobDescHtml(html);
+  };
+
+  const handleSaveDraftJd = async (finalHtml: string) => {
+    setNewJobDescHtml(finalHtml);
+    setNewJobDesc(finalHtml);
+    const draftPayload = {
+      title: newJobTitle,
+      department: newJobDept,
+      location: newJobLoc,
+      experience: newJobExp,
+      keywords: newJobKeywords,
+      workplaceType: newJobWorkplace,
+      channels: newJobChannels,
+      description: finalHtml,
+      descriptionHtml: finalHtml,
+      updatedAt: new Date().toISOString(),
+    };
+    localStorage.setItem("bh_admin_job_draft", JSON.stringify(draftPayload));
+    setHasDraftLoaded(true);
+
+    try {
+      await fetch(`/api/t/${tenant.slug}/jobs-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draftPayload),
+      });
+    } catch {
+      // offline fallback
+    }
+  };
+
+  const handlePublishJd = async (finalHtml: string, channels: string[]) => {
+    const finalDesc = finalHtml.trim();
+    const externalRef =
+      newJobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
+      `job-${Date.now()}`;
+
+    const newJobItem: JobItem = {
+      id: `job-${Date.now()}`,
+      externalRef,
+      title: newJobTitle.trim(),
+      department: newJobDept.trim() || "Technology",
+      location: newJobLoc.trim() || "Remote",
+      experience: newJobExp.trim() || undefined,
+      keywords: newJobKeywords.trim() || undefined,
+      publishedChannels: channels.length > 0 ? channels : ["Brutallyhired Portal"],
+      workplaceType: newJobWorkplace,
+      status: "OPEN",
+      description: finalDesc, // The final edited JD!
+      applicantCount: 0,
+    };
+
+    const updated = [newJobItem, ...jobs];
+    setJobs(updated);
+    localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
+    localStorage.removeItem("bh_admin_job_draft");
+    setHasDraftLoaded(false);
+
+    try {
+      await fetch(`/api/t/${tenant.slug}/jobs-publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newJobTitle.trim(),
+          department: newJobDept.trim() || "Technology",
+          location: newJobLoc.trim() || "Remote",
+          experience: newJobExp.trim() || undefined,
+          keywords: newJobKeywords.trim() || undefined,
+          publishedChannels: channels,
+          workplaceType: newJobWorkplace,
+          description: finalDesc, // Final edited JD!
+        }),
+      });
+    } catch (e) {
+      console.warn("Backend publish fallback to local:", e);
+    }
+
+    setIsJdEditorOpen(false);
+    setNewJobOpen(false);
+    setNewJobTitle("");
+    setNewJobDept("");
+    setNewJobLoc("");
+    setNewJobExp("");
+    setNewJobKeywords("");
+    setNewJobChannels(["Brutallyhired Portal", "LinkedIn", "Indeed"]);
+    setNewJobWorkplace("HYBRID");
+    setNewJobDesc("");
+    setNewJobDescHtml("");
+    setActiveTab("jobs");
+  };
+
+  const handleRegenerateJd = () => {
+    const html = generateJobDescriptionHtml({
+      title: newJobTitle,
+      department: newJobDept,
+      location: newJobLoc,
+      experience: newJobExp,
+      keywords: newJobKeywords,
+      workplaceType: newJobWorkplace,
+    });
+    setNewJobDescHtml(html);
+    setNewJobDesc(html);
+    return html;
   };
 
   // Rejection & Hold modal state (Diagram 1)
@@ -525,7 +723,7 @@ export function AdminDashboard() {
 
   // Assessment & Secure Examination Architecture state (Figure 4)
   const [assessmentFilterMode, setAssessmentFilterMode] = useState<"ALL" | "STANDARD" | "HIGHER_ASSURANCE">("ALL");
-  const [assessmentSubTab, setAssessmentSubTab] = useState<"QUEUE" | "INVITES" | "TEMPLATES">("QUEUE");
+  const [assessmentSubTab, setAssessmentSubTab] = useState<"ROUNDS" | "QUEUE" | "INVITES" | "TEMPLATES">("ROUNDS");
   const [assessmentRiskFilter, setAssessmentRiskFilter] = useState<"ALL" | "FLAGGED" | "CLEAN">("ALL");
   const [activeInspectSession, setActiveInspectSession] = useState<AssessmentSessionItem | null>(null);
 
@@ -890,6 +1088,40 @@ export function AdminDashboard() {
     return <AdminLoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
 
+  if (isJdEditorOpen) {
+    return (
+      <JobDescriptionEditor
+        jobTitle={newJobTitle}
+        department={newJobDept || "Technology"}
+        location={newJobLoc || "Flexible / Remote"}
+        experience={newJobExp}
+        workplaceType={newJobWorkplace}
+        keywords={newJobKeywords}
+        publishedChannels={newJobChannels}
+        initialHtml={
+          newJobDescHtml ||
+          (newJobDesc.startsWith("<")
+            ? newJobDesc
+            : generateJobDescriptionHtml({
+                title: newJobTitle,
+                department: newJobDept,
+                location: newJobLoc,
+                experience: newJobExp,
+                keywords: newJobKeywords,
+                workplaceType: newJobWorkplace,
+              }))
+        }
+        onSaveDraft={handleSaveDraftJd}
+        onPublish={handlePublishJd}
+        onRegenerate={handleRegenerateJd}
+        onBack={() => {
+          setIsJdEditorOpen(false);
+          setNewJobOpen(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-canvas text-ink">
       {/* Left Sidebar Navigation */}
@@ -921,7 +1153,7 @@ export function AdminDashboard() {
               { id: "jobs", label: "Jobs", icon: <Briefcase size={18} /> },
               { id: "assessments", label: "Assessments", icon: <Shield size={18} /> },
               { id: "interviews", label: "Interviews", icon: <Video size={18} /> },
-              { id: "reports", label: "Analytics & Reports", icon: <File size={18} /> },
+              { id: "brutallyScore", label: "Brutally Score", icon: <Sparkle size={18} /> },
               { id: "staff", label: "Team", icon: <Users size={18} /> },
               { id: "settings", label: "Settings", icon: <Settings size={18} /> },
             ].map((tab) => {
@@ -1548,9 +1780,22 @@ export function AdminDashboard() {
                 <h1 className="text-2xl font-bold tracking-tight text-ink">Job Openings</h1>
                 <p className="text-sm text-ink-muted">Manage active requisitions and candidate apply links.</p>
               </div>
-              <Button icon={<Plus size={18} />} onClick={() => setNewJobOpen(true)}>
-                Post Job
-              </Button>
+              <div className="flex items-center gap-2">
+                {hasDraftLoaded && (newJobDesc || newJobTitle) && (
+                  <button
+                    type="button"
+                    onClick={() => setIsJdEditorOpen(true)}
+                    className="flex items-center gap-1.5 rounded-xl border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800 hover:bg-teal-100 transition-colors shadow-xs"
+                    title="Resume editing unsaved draft"
+                  >
+                    <span>✏️</span>
+                    <span>Resume Draft ({newJobTitle || "Requisition"})</span>
+                  </button>
+                )}
+                <Button icon={<Plus size={18} />} onClick={() => setNewJobOpen(true)}>
+                  Post Job
+                </Button>
+              </div>
             </div>
 
             {jobs.length === 0 ? (
@@ -1594,7 +1839,7 @@ export function AdminDashboard() {
                         {[j.department || "Technology", j.location || "Remote", j.workplaceType || "HYBRID", j.experience].filter(Boolean).join(" • ")}
                       </p>
                       <p className="mt-2 text-xs leading-relaxed text-ink-2 whitespace-pre-line line-clamp-3">
-                        {j.description}
+                        {j.description.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim()}
                       </p>
                     </div>
                     <div className="border-t border-line pt-3 flex items-center justify-between text-xs">
@@ -1604,17 +1849,40 @@ export function AdminDashboard() {
                           type="button"
                           onClick={() => setViewJobModal(j)}
                           className="flex items-center gap-1 font-semibold text-brand hover:underline"
+                          title="View job opening details"
                         >
                           <Eye size={13} />
                           <span>View</span>
                         </button>
                         <span className="text-line-2">•</span>
-                        <Link
-                          to={`/${tenant.slug}/apply/${j.externalRef}`}
-                          className="font-semibold text-ink-2 hover:text-brand hover:underline"
+                        <button
+                          type="button"
+                          onClick={() => handleCopyJobLink(j)}
+                          className="flex items-center gap-1 font-semibold text-ink-2 hover:text-brand transition-colors"
+                          title="Copy application link to clipboard"
                         >
-                          Apply Link →
-                        </Link>
+                          {copiedJobId === j.id ? (
+                            <>
+                              <Check size={13} className="text-emerald-600" />
+                              <span className="text-emerald-700 font-bold">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={13} />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                        <span className="text-line-2">•</span>
+                        <button
+                          type="button"
+                          onClick={() => handleShareJob(j)}
+                          className="flex items-center gap-1 font-semibold text-ink-2 hover:text-brand transition-colors"
+                          title="Share job opening"
+                        >
+                          <Share size={13} />
+                          <span>Share</span>
+                        </button>
                       </div>
                     </div>
                   </Card>
@@ -1634,11 +1902,8 @@ export function AdminDashboard() {
                   <h1 className="text-2xl font-bold tracking-tight text-ink">
                     Assessment & Secure Examination Architecture
                   </h1>
-                  <Pill tone="teal">Figure 4 Compliant</Pill>
                 </div>
-                <p className="mt-1 text-sm text-ink-muted">
-                  BrutalAssessAI™ multi-signal telemetry, timed autosave exam runtime, and human reviewer adjudication queue.
-                </p>
+                
               </div>
 
               {/* Mode Toggle */}
@@ -1665,41 +1930,28 @@ export function AdminDashboard() {
               </div>
             </div>
 
-            {/* Visual Architecture Stepper banner (Figure 4) */}
-            <Card className="p-4 bg-canvas/40 border-line-soft">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-muted block mb-2">
-                Figure 4 — Exam Session, Proctoring & Human Adjudication Lifecycle
-              </span>
-              <div className="grid grid-cols-2 md:grid-cols-7 gap-2 text-center text-xs">
-                {[
-                  { step: "1", title: "Invite & Expiry", desc: "3-day configurable deadline" },
-                  { step: "2", title: "Consent & Pre-Check", desc: "Webcam, screen, mic & latency" },
-                  { step: "3", title: "Exam Mode", desc: "Web proctoring vs secure client" },
-                  { step: "4", title: "Timed & Autosave", desc: "Continuous audit trail (15s)" },
-                  { step: "5", title: "AI Signals", desc: "Face, phone, monitor, blur" },
-                  { step: "6", title: "Evidence Queue", desc: "Risk flags & anomaly metrics" },
-                  { step: "7", title: "Human Adjudication", desc: "Pass / Retry / Review / Fail" },
-                ].map((s, idx) => (
-                  <div
-                    key={s.step}
-                    className="flex flex-col items-center justify-between rounded-xl border border-line bg-white p-2.5 shadow-xs"
-                  >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 font-bold text-brand text-[10px] mb-1">
-                      {s.step}
-                    </span>
-                    <span className="font-bold text-ink text-[11px]">{s.title}</span>
-                    <span className="text-[9px] text-ink-muted leading-tight mt-0.5">{s.desc}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
             {/* Sub-tab Navigation */}
-            <div className="flex border-b border-line space-x-6 text-xs font-semibold">
+            <div className="flex border-b border-line space-x-6 text-xs font-semibold overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setAssessmentSubTab("ROUNDS")}
+                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${
+                  assessmentSubTab === "ROUNDS"
+                    ? "border-brand text-brand"
+                    : "border-transparent text-ink-muted hover:text-ink"
+                }`}
+              >
+                <Sparkle size={15} />
+                <span>Assessment Rounds Studio (3 Rounds)</span>
+                <span className="rounded-full bg-brand-soft text-brand px-2 py-0.5 text-[10px] font-bold">
+                  AI Active
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setAssessmentSubTab("QUEUE")}
-                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
+                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${
                   assessmentSubTab === "QUEUE"
                     ? "border-brand text-brand"
                     : "border-transparent text-ink-muted hover:text-ink"
@@ -1715,7 +1967,7 @@ export function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => setAssessmentSubTab("INVITES")}
-                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
+                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${
                   assessmentSubTab === "INVITES"
                     ? "border-brand text-brand"
                     : "border-transparent text-ink-muted hover:text-ink"
@@ -1731,7 +1983,7 @@ export function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => setAssessmentSubTab("TEMPLATES")}
-                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 ${
+                className={`pb-3 transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${
                   assessmentSubTab === "TEMPLATES"
                     ? "border-brand text-brand"
                     : "border-transparent text-ink-muted hover:text-ink"
@@ -1741,6 +1993,11 @@ export function AdminDashboard() {
                 <span>Assessment Templates Library</span>
               </button>
             </div>
+
+            {/* SUBTAB 0: ASSESSMENT ROUNDS STUDIO (3 ROUNDS + DYNAMIC EXTENSIONS) */}
+            {assessmentSubTab === "ROUNDS" && (
+              <AssessmentRoundsStudio jobs={jobs} applications={applications} tenant={tenant} />
+            )}
 
             {/* SUBTAB 1: EVIDENCE & RISK FLAGS QUEUE */}
             {assessmentSubTab === "QUEUE" && (
@@ -2184,154 +2441,9 @@ export function AdminDashboard() {
           </div>
         )}
 
-        {/* TAB: REPORTS & ANALYTICS */}
-        {activeTab === "reports" && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight text-ink">Recruitment Lifecycle Analytics & Reports</h1>
-                <p className="text-sm text-ink-muted">
-                  End-to-end recruitment funnel throughput, BrutalAssessAI™ examination integrity stats, and hiring performance.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    const csvRows = [
-                      "Candidate Name,Email,Job Title,Stage,Score,Submitted At",
-                      ...applications.map(
-                        (a) => `"${a.candidateName}","${a.email}","${a.jobTitle}","${a.stage}",${a.score},"${a.submittedAt}"`
-                      ),
-                    ];
-                    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.download = `Brutallyhired_Pipeline_Report_${new Date().toISOString().slice(0, 10)}.csv`;
-                    link.click();
-                  }}
-                >
-                  Export Pipeline (CSV)
-                </Button>
-                <Button
-                  onClick={() => {
-                    const auditRows = [
-                      "Session ID,Candidate Name,Job Title,Status,AI Risk Level,Face Visibility %,Extra Persons,Autosaves",
-                      ...assessmentSessions.map(
-                        (s) =>
-                          `"${s.id}","${s.candidateName}","${s.jobTitle}","${s.status}","${s.riskLevel}",${s.aiSignals.faceVisibilityPct},${s.aiSignals.extraPersonsCount},${s.autosaveCheckpoints}`
-                      ),
-                    ];
-                    const blob = new Blob([auditRows.join("\n")], { type: "text/csv" });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.download = `BrutalAssessAI_Proctoring_Audit_${new Date().toISOString().slice(0, 10)}.csv`;
-                    link.click();
-                  }}
-                >
-                  Download Proctoring Audit
-                </Button>
-              </div>
-            </div>
-
-            {/* Funnel KPI Cards (Diagram 1) */}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Card className="p-4 space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">1. Total Applied</span>
-                <span className="font-display text-2xl font-bold text-ink">{applications.length}</span>
-                <span className="text-[11px] text-teal-700 block">100% Top of Funnel</span>
-              </Card>
-              <Card className="p-4 space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">2. Shortlisted & Exam</span>
-                <span className="font-display text-2xl font-bold text-ink">
-                  {applications.filter((a) => ["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(a.stage)).length}
-                </span>
-                <span className="text-[11px] text-brand block">Pass Screening Policy</span>
-              </Card>
-              <Card className="p-4 space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">3. LiveKit Interviews</span>
-                <span className="font-display text-2xl font-bold text-ink">
-                  {applications.filter((a) => ["INTERVIEW", "OFFER", "HIRED"].includes(a.stage)).length}
-                </span>
-                <span className="text-[11px] text-teal-700 block">Assessment Qualified</span>
-              </Card>
-              <Card className="p-4 space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">4. Offers & Hired</span>
-                <span className="font-display text-2xl font-bold text-emerald-700">
-                  {applications.filter((a) => ["OFFER", "HIRED", "ONBOARDING"].includes(a.stage)).length}
-                </span>
-                <span className="text-[11px] text-emerald-800 block">94% Acceptance Rate</span>
-              </Card>
-            </div>
-
-            {/* BrutalAssessAI™ Examination Quality & Telemetry Audit (Figure 4) */}
-            <Card className="space-y-4 p-5">
-              <div className="flex items-center justify-between border-b border-line pb-3">
-                <div className="flex items-center gap-2">
-                  <Shield size={20} className="text-brand" />
-                  <h3 className="font-bold text-base text-ink">BrutalAssessAI™ Examination Integrity & Audit Metrics</h3>
-                </div>
-                <span className="rounded-full bg-teal-100 text-teal-800 px-2.5 py-0.5 text-xs font-bold">
-                  98.6% Proctoring Reliability
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-1">
-                  <span className="font-bold text-ink block">Clean Examination Telemetry</span>
-                  <span className="text-xl font-bold text-teal-700">95.8%</span>
-                  <p className="text-ink-muted text-[11px]">Continuous webcam verified, 0 secondary persons, single display locked.</p>
-                </div>
-                <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-1">
-                  <span className="font-bold text-ink block">Average Assessment Score</span>
-                  <span className="text-xl font-bold text-brand">88.4 / 100</span>
-                  <p className="text-ink-muted text-[11px]">Timed 45-min full-stack coding & architecture evaluation.</p>
-                </div>
-                <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-1">
-                  <span className="font-bold text-ink block">Adjudication Turnaround</span>
-                  <span className="text-xl font-bold text-ink">1.8 Hours</span>
-                  <p className="text-ink-muted text-[11px]">Average human reviewer adjudication latency across risk queue.</p>
-                </div>
-              </div>
-            </Card>
-
-            {/* Department Hiring Throughput */}
-            <Card className="space-y-4">
-              <h3 className="font-bold text-sm text-ink px-2">Department Throughput & Requisition Health</h3>
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-                    <th className="pb-3 pl-2">Department</th>
-                    <th className="pb-3">Open Positions</th>
-                    <th className="pb-3">Applicants</th>
-                    <th className="pb-3">Avg Fit Score</th>
-                    <th className="pb-3 pr-2 text-right">Hired</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line/60">
-                  <tr className="hover:bg-canvas/50">
-                    <td className="py-3 pl-2 font-bold text-ink">Engineering</td>
-                    <td className="py-3">3 Open</td>
-                    <td className="py-3">
-                      {applications.filter((a) => a.department === "Engineering").length} candidates
-                    </td>
-                    <td className="py-3 font-semibold text-teal-800">88.2 / 100</td>
-                    <td className="py-3 pr-2 text-right font-bold text-emerald-700">2 Hired</td>
-                  </tr>
-                  <tr className="hover:bg-canvas/50">
-                    <td className="py-3 pl-2 font-bold text-ink">Design & Product</td>
-                    <td className="py-3">2 Open</td>
-                    <td className="py-3">
-                      {applications.filter((a) => a.department === "Design" || a.department === "Product").length} candidates
-                    </td>
-                    <td className="py-3 font-semibold text-teal-800">85.0 / 100</td>
-                    <td className="py-3 pr-2 text-right font-bold text-emerald-700">1 Hired</td>
-                  </tr>
-                </tbody>
-              </table>
-            </Card>
-          </div>
+        {/* TAB: BRUTALLY SCORE MODULE */}
+        {activeTab === "brutallyScore" && (
+          <BrutallyScoreModule jobs={jobs} tenant={tenant} />
         )}
 
         {/* TAB 5: STAFF */}
@@ -2825,13 +2937,36 @@ export function AdminDashboard() {
                   /{tenant.slug}/apply/{viewJobModal.externalRef}
                 </span>
               </div>
-              <Link
-                to={`/${tenant.slug}/apply/${viewJobModal.externalRef}`}
-                className="flex items-center gap-1 font-bold text-brand hover:underline shrink-0"
-              >
-                <span>Open Form</span>
-                <ExternalLink size={13} />
-              </Link>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCopyJobLink(viewJobModal)}
+                  className="flex items-center gap-1 font-bold text-ink-2 hover:text-brand transition-colors"
+                  title="Copy application link to clipboard"
+                >
+                  {copiedJobId === viewJobModal.id ? (
+                    <>
+                      <Check size={13} className="text-emerald-600" />
+                      <span className="text-emerald-700">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={13} />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+                <span className="text-line-2">•</span>
+                <button
+                  type="button"
+                  onClick={() => handleShareJob(viewJobModal)}
+                  className="flex items-center gap-1 font-bold text-ink-2 hover:text-brand transition-colors"
+                  title="Share job opening"
+                >
+                  <Share size={13} />
+                  <span>Share</span>
+                </button>
+              </div>
             </div>
 
             {/* Full Job Description */}
@@ -2839,8 +2974,15 @@ export function AdminDashboard() {
               <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted block">
                 Full Job Description
               </span>
-              <div className="max-h-80 overflow-y-auto rounded-xl border border-line bg-canvas/40 p-4 text-xs leading-relaxed text-ink whitespace-pre-line font-sans select-text">
-                {viewJobModal.description}
+              <div className="max-h-80 overflow-y-auto rounded-xl border border-line bg-canvas/40 p-4 text-xs leading-relaxed text-ink select-text">
+                {viewJobModal.description.includes("<") ? (
+                  <div
+                    className="prose prose-xs max-w-none [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_p]:mb-2 text-ink-2"
+                    dangerouslySetInnerHTML={{ __html: viewJobModal.description }}
+                  />
+                ) : (
+                  <p className="whitespace-pre-line">{viewJobModal.description}</p>
+                )}
               </div>
             </div>
 
@@ -2860,13 +3002,123 @@ export function AdminDashboard() {
                 <Button variant="ghost" onClick={() => setViewJobModal(null)}>
                   Close
                 </Button>
-                <Link
-                  to={`/${tenant.slug}/apply/${viewJobModal.externalRef}`}
-                  className="rounded-xl bg-brand px-3.5 py-2 text-xs font-bold text-brand-fg no-underline hover:opacity-90 transition-opacity"
+                <Button
+                  variant="ghost"
+                  onClick={() => handleCopyJobLink(viewJobModal)}
+                  className="flex items-center gap-1.5 text-xs font-semibold"
                 >
-                  Candidate Apply View →
-                </Link>
+                  {copiedJobId === viewJobModal.id ? (
+                    <>
+                      <Check size={14} className="text-emerald-600" />
+                      <span className="text-emerald-700 font-bold">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} />
+                      <span>Copy Link</span>
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => handleShareJob(viewJobModal)}
+                  className="flex items-center gap-1.5 text-xs font-bold"
+                >
+                  <Share size={14} />
+                  <span>Share Job</span>
+                </Button>
               </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL: Share Job Opening */}
+      <Modal
+        open={Boolean(shareJobModal)}
+        onClose={() => setShareJobModal(null)}
+        title="Share Job Opening"
+        subtitle={shareJobModal ? `Share "${shareJobModal.title}" with prospective candidates` : undefined}
+      >
+        {shareJobModal && (
+          <div className="space-y-4 text-xs">
+            <div>
+              <span className="text-ink-muted block font-semibold mb-1">Public Application Link</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={getJobApplyUrl(shareJobModal)}
+                  className="flex-1 rounded-xl border border-line bg-canvas/60 px-3 py-2 text-xs font-mono text-ink select-all focus:outline-none"
+                />
+                <Button
+                  variant={copiedJobId === shareJobModal.id ? "ghost" : "primary"}
+                  onClick={() => handleCopyJobLink(shareJobModal)}
+                  className="flex items-center gap-1 shrink-0 text-xs"
+                >
+                  {copiedJobId === shareJobModal.id ? (
+                    <>
+                      <Check size={13} className="text-emerald-600" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={13} />
+                      <span>Copy Link</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-line-soft bg-canvas/40 p-3 space-y-2">
+              <span className="font-semibold text-ink block">Quick Share via Platforms</span>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <a
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                    `We're hiring for ${shareJobModal.title} at ${tenant.name}! Apply here: ${getJobApplyUrl(shareJobModal)}`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface p-2.5 font-semibold text-ink hover:border-brand hover:text-brand transition-colors text-center no-underline"
+                >
+                  <span>WhatsApp</span>
+                </a>
+                <a
+                  href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(getJobApplyUrl(shareJobModal))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface p-2.5 font-semibold text-ink hover:border-brand hover:text-brand transition-colors text-center no-underline"
+                >
+                  <span>LinkedIn</span>
+                </a>
+                <a
+                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                    `We're hiring a ${shareJobModal.title}! Apply now: `
+                  )}&url=${encodeURIComponent(getJobApplyUrl(shareJobModal))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface p-2.5 font-semibold text-ink hover:border-brand hover:text-brand transition-colors text-center no-underline"
+                >
+                  <span>Twitter / X</span>
+                </a>
+                <a
+                  href={`mailto:?subject=${encodeURIComponent(
+                    `Job Opportunity: ${shareJobModal.title} at ${tenant.name}`
+                  )}&body=${encodeURIComponent(
+                    `Hi,\n\nCheck out this job opening for ${shareJobModal.title} (${shareJobModal.department || "Technology"} • ${shareJobModal.location || "Remote"}):\n\n${getJobApplyUrl(shareJobModal)}\n\nBest regards,\n${tenant.name} Hiring Team`
+                  )}`}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface p-2.5 font-semibold text-ink hover:border-brand hover:text-brand transition-colors text-center no-underline"
+                >
+                  <span>Email</span>
+                </a>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-line">
+              <Button variant="ghost" onClick={() => setShareJobModal(null)}>
+                Close
+              </Button>
             </div>
           </div>
         )}
@@ -2986,10 +3238,10 @@ export function AdminDashboard() {
             </div>
           </div>
 
-          <div className="space-y-1.5 pt-1">
+          <div className="space-y-3 pt-2 border-t border-line-soft">
             <div className="flex items-center justify-between">
-              <label htmlFor="job-desc-textarea" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Job Description (AI Drafted)
+              <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                Job Description (AI Generator & Workspace)
               </label>
               <button
                 type="button"
@@ -3001,45 +3253,94 @@ export function AdminDashboard() {
                 <span>Auto-Generate with AI</span>
               </button>
             </div>
-            <Textarea
-              id="job-desc-textarea"
-              rows={6}
-              placeholder="Fill in the role & keywords above, then click 'Auto-Generate with AI' to generate the JD..."
-              value={newJobDesc}
-              onChange={(e) => setNewJobDesc(e.target.value)}
-            />
-            {!newJobDesc.trim() ? (
-              <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 border border-amber-200">
-                ⚡ Fill in the fields & keywords above and click <strong>Auto-Generate with AI</strong> before publishing.
-              </p>
+
+            {newJobDescHtml || newJobDesc ? (
+              <div className="rounded-xl border border-teal-200 bg-teal-50/80 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-teal-900 flex items-center gap-1.5">
+                    <Check size={15} className="text-teal-700" />
+                    <span>AI Description Drafted Successfully</span>
+                  </span>
+                  <span className="text-[11px] text-teal-800 font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-teal-200">
+                    ~{newJobDesc.replace(/<[^>]+>/g, " ").split(/\s+/).filter(Boolean).length} words
+                  </span>
+                </div>
+
+                <p className="text-xs text-teal-800 leading-relaxed line-clamp-3 bg-white/60 p-2.5 rounded-lg border border-teal-100">
+                  {newJobDesc.replace(/<[^>]+>/g, " ").substring(0, 220)}...
+                </p>
+
+                {/* Requirement 1: Provide "Preview & Edit JD" button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewJobOpen(false);
+                    setIsJdEditorOpen(true);
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold py-2.5 px-4 text-xs shadow-sm hover:shadow transition-all"
+                >
+                  <span>Preview & Edit JD (Full-Page Workspace)</span>
+                  <Arrow size={14} />
+                </button>
+              </div>
             ) : (
-              <p className="text-[11px] text-emerald-800 bg-emerald-50 rounded-lg p-2 border border-emerald-200">
-                ✓ Job description generated with your role keywords. Review and edit above if needed.
-              </p>
+              <div className="rounded-xl border border-dashed border-line-2 bg-slate-50 p-5 text-center space-y-2">
+                <p className="text-xs text-ink-muted">
+                  Fill in the role & keywords above, then click <strong>Auto-Generate with AI</strong>.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateDesc}
+                  disabled={!newJobTitle.trim()}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-line px-3.5 py-1.5 text-xs font-semibold text-ink-2 hover:border-brand hover:text-brand shadow-xs disabled:opacity-50"
+                >
+                  <Sparkle size={13} />
+                  <span>Auto-Generate with AI</span>
+                </button>
+              </div>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-line pt-3">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setNewJobOpen(false);
-                setGenerateError("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={!newJobTitle.trim() || !newJobDesc.trim()}
-              title={
-                !newJobDesc.trim()
-                  ? "Click 'Auto-Generate with AI' to generate description first"
-                  : undefined
-              }
-            >
-              Publish Opening
-            </Button>
+          <div className="flex justify-between items-center border-t border-line pt-3">
+            <div>
+              {hasDraftLoaded && (
+                <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                  <Check size={12} />
+                  <span>Saved draft active</span>
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setNewJobOpen(false);
+                  setGenerateError("");
+                }}
+              >
+                Cancel
+              </Button>
+              {newJobDesc ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewJobOpen(false);
+                    setIsJdEditorOpen(true);
+                  }}
+                  className="rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold px-4 py-2 text-xs shadow-sm transition-all flex items-center gap-1.5"
+                >
+                  <span>Preview & Edit JD →</span>
+                </button>
+              ) : (
+                <Button
+                  type="submit"
+                  disabled={!newJobTitle.trim()}
+                  title="Generate or fill JD first"
+                >
+                  Continue
+                </Button>
+              )}
+            </div>
           </div>
         </form>
       </Modal>
