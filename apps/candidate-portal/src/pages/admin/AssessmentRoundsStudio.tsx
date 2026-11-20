@@ -1255,7 +1255,7 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
             </Button>
             <Button variant="primary" onClick={handleSaveAllRounds} className="text-xs font-bold">
               <Check size={14} />
-              <span>Save Pipeline</span>
+              <span>Save</span>
             </Button>
           </div>
         </div>

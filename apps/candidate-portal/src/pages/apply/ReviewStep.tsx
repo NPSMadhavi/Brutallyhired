@@ -112,6 +112,15 @@ export function ReviewStep() {
               hardScore: 48,
               preferredScore: 37,
               resumeName: draft.resume?.name || "Candidate_Resume.pdf",
+              resumeDataUrl: (() => {
+                const local = localStorage.getItem(`bh_draft_${draft.id}`);
+                if (local) {
+                  try {
+                    return JSON.parse(local).resumeDataUrl;
+                  } catch {}
+                }
+                return undefined;
+              })(),
             };
             const updated = [newAppItem, ...existing.filter((e) => e.id !== newAppItem.id)];
             localStorage.setItem("bh_admin_applications", JSON.stringify(updated));

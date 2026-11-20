@@ -142,6 +142,30 @@ export function getStandardGlobalScreeningQuestions(): ScreeningQuestion[] {
   ];
 }
 
+// Helper to read current screening cutoff threshold for a job or globally
+export function getScreeningCutoffThreshold(jobId?: string): number {
+  if (typeof window === "undefined") return 70;
+  if (jobId && jobId !== "ALL") {
+    try {
+      const saved = localStorage.getItem(`bh_role_threshold_${jobId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.screeningScoreThreshold === "number" && parsed.screeningScoreThreshold > 0) {
+          return parsed.screeningScoreThreshold;
+        }
+      }
+    } catch {}
+  }
+  try {
+    const globalVal = localStorage.getItem("bh_screening_cutoff_threshold");
+    if (globalVal) {
+      const num = Number(globalVal);
+      if (!isNaN(num) && num > 0) return num;
+    }
+  } catch {}
+  return 70; // Default from Brutally Score module
+}
+
 export function BrutallyScoreModule({ jobs, tenant }: BrutallyScoreModuleProps) {
   // ── 1. SECTION 1: ROLE-SPECIFIC THRESHOLDS STATE ──
   const [selectedJobId, setSelectedJobId] = useState<string>(() => {
@@ -204,7 +228,9 @@ export function BrutallyScoreModule({ jobs, tenant }: BrutallyScoreModuleProps) 
       lastUpdated: new Date().toISOString(),
     };
     localStorage.setItem(`bh_role_threshold_${selectedJob.id}`, JSON.stringify(policy));
-    setRoleNotice(`Thresholds saved for ${selectedJob.title}!`);
+    localStorage.setItem("bh_screening_cutoff_threshold", String(screeningThreshold));
+    window.dispatchEvent(new Event("storage"));
+    setRoleNotice(`Screening cutoff threshold (${screeningThreshold}/100) saved for ${selectedJob.title}!`);
     setTimeout(() => setRoleNotice(""), 3000);
   };
 

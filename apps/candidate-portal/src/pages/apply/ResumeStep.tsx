@@ -185,6 +185,15 @@ export function ResumeStep() {
                         skills: ["TypeScript", "React", "Node.js", "System Design"],
                         certifications: ["Full-Stack Engineering"],
                       };
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        try {
+                          const cur = JSON.parse(localStorage.getItem(`bh_draft_${draft.id}`) || "{}");
+                          cur.resumeDataUrl = reader.result;
+                          localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(cur));
+                        } catch {}
+                      };
+                      reader.readAsDataURL(file);
                       localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
                     } catch {}
                   }
@@ -219,6 +228,15 @@ export function ResumeStep() {
                     skills: ["TypeScript", "React", "Node.js", "System Design"],
                     certifications: ["Full-Stack Engineering"],
                   };
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    try {
+                      const cur = JSON.parse(localStorage.getItem(`bh_draft_${draft.id}`) || "{}");
+                      cur.resumeDataUrl = reader.result;
+                      localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(cur));
+                    } catch {}
+                  };
+                  reader.readAsDataURL(file);
                   localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
                 } catch {}
               }

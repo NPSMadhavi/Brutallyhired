@@ -15,6 +15,7 @@ import { Avatar } from "@/components/ui/misc";
 import { fileUrl } from "@/lib/api";
 import { sendEmailNotification } from "@/lib/emailService";
 import { useFormat } from "@/lib/format";
+import { generate3PageOfferLetterPdf } from "@/pages/admin/OfferModule";
 
 export function OfferPage() {
   const tenant = useTenantCtx();
@@ -166,8 +167,28 @@ export function OfferPage() {
             {o.letter && (
               <div className="flex flex-wrap items-center gap-3.5 rounded-2xl border border-line px-4 py-3.5">
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#FDECEC] text-[#B42318]"><FileIcon /></span>
-                <div className="min-w-0 flex-1"><p className="font-semibold">{t("offer.letter")}</p><p className="text-[13px] text-ink-muted">{o.letter.name} · {f.fileSize(o.letter.sizeBytes)}</p></div>
-                <ButtonAnchor href={fileUrl(o.letter.id)} variant="ghost" icon={<Download size={16} />}>{t("common.download")}</ButtonAnchor>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{customTerms?.offerLetterName || t("offer.letter")}</p>
+                  <p className="text-[13px] text-ink-muted">Official 3-Page Employment Offer Letter (PDF)</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (customTerms) {
+                      const { url, filename } = generate3PageOfferLetterPdf(customTerms);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    }
+                  }}
+                  icon={<Download size={16} />}
+                >
+                  {t("common.download")}
+                </Button>
               </div>
             )}
           </section>
