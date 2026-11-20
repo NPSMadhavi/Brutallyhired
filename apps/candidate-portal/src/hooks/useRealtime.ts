@@ -24,11 +24,12 @@ export function useRealtime(slug: string, enabled: boolean) {
     };
     socket.on(SOCKET_EVENTS.notification, onNotification);
     socket.on(SOCKET_EVENTS.applicationUpdated, onUpdated);
-    socket.connect();
+    if (!socket.connected) {
+      socket.connect();
+    }
     return () => {
       socket.off(SOCKET_EVENTS.notification, onNotification);
       socket.off(SOCKET_EVENTS.applicationUpdated, onUpdated);
-      closeSocket();
     };
   }, [enabled, slug, qc, toast, t]);
 }

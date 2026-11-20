@@ -4,7 +4,8 @@ import { defineConfig, loadEnv } from "vite";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, "../.."), "");
-  const apiTarget = env.API_ORIGIN || "http://localhost:4000";
+  const rawTarget = env.API_ORIGIN || "http://127.0.0.1:4000";
+  const apiTarget = rawTarget.replace("localhost", "127.0.0.1");
   return {
     plugins: [react()],
     envDir: path.resolve(__dirname, "../.."),
@@ -19,8 +20,37 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       strictPort: true,
       proxy: {
-        "/api": { target: apiTarget, changeOrigin: false },
-        "/socket.io": { target: apiTarget, ws: true, changeOrigin: false },
+        "/api": {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: false,
+          configure: (proxy) => {
+            proxy.on("error", (_err, _req, res) => {
+              if (res && "writeHead" in res && !res.headersSent) {
+                res.writeHead(503, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Backend service unavailable, retrying..." }));
+              }
+            });
+          },
+        },
+        "/socket.io": {
+          target: apiTarget,
+          ws: true,
+          changeOrigin: true,
+          secure: false,
+          configure: (proxy) => {
+            proxy.on("error", (_err, _req, socket) => {
+              if (socket && "destroy" in socket && !socket.destroyed) {
+                socket.destroy();
+              }
+            });
+            proxy.on("proxyReqWs", (_proxyReq, _req, socket) => {
+              socket.on("error", () => {
+                if (!socket.destroyed) socket.destroy();
+              });
+            });
+          },
+        },
       },
     },
     build: { sourcemap: true, chunkSizeWarningLimit: 1200 },

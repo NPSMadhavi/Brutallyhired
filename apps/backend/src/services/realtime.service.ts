@@ -9,7 +9,10 @@ let io: Server | null = null;
 export function attachSocket(server: HttpServer) {
   io = new Server(server, {
     path: "/socket.io",
-    cors: { origin: env.WEB_ORIGIN, credentials: true },
+    cors: {
+      origin: [env.WEB_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"],
+      credentials: true,
+    },
   });
   io.use(async (socket, next) => {
     try {

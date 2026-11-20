@@ -8,7 +8,7 @@ import { logger } from "./utils/logger.js";
 const server = createServer(createApp());
 attachSocket(server);
 
-server.listen(env.API_PORT, () => logger.info(`API listening on :${env.API_PORT}`));
+server.listen(env.API_PORT, "0.0.0.0", () => logger.info(`API listening on :${env.API_PORT}`));
 
 // Housekeeping: expired sessions, auth flows, codes and intents.
 const sweep = setInterval(async () => {

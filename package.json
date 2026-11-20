@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n backend,candidate,admin -c blue,green,magenta \"npm run dev:backend\" \"npm run dev:candidate\" \"npm run dev:admin\"",
+    "dev": "concurrently -n backend,web -c blue,green \"npm run dev:backend\" \"npm run dev:candidate\"",
     "dev:backend": "npm run dev --workspace=@verity/backend",
     "dev:candidate": "npm run dev --workspace=@verity/candidate-portal",
     "dev:admin": "npm run dev --workspace=@verity/admin-portal",
