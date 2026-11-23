@@ -10,6 +10,7 @@ import {
   offerCreateSchema,
   onboardingReviewSchema,
   onboardingTemplateSchema,
+  resumeSummarySchema,
   staffInviteSchema,
   stageChangeSchema,
   tenantSettingsSchema,
@@ -18,6 +19,7 @@ import type { RequestHandler } from "express";
 import { type Request } from "express";
 import { z } from "zod";
 import { env } from "../config/env.js";
+import { generateCandidateAssessmentQuestions } from "../services/ai.service.js";
 import { sendTemplate } from "../services/email.service.js";
 import { storeUpload } from "../services/file.service.js";
 import { interviewToken } from "../services/livekit.service.js";
@@ -253,6 +255,174 @@ export const inviteToAssessment = ah(async (req, res) => {
     path: `/${tenantOf(req).slug}/applications/${app.id}/assessments/${invite.id}`,
   });
   res.status(201).json(invite);
+});
+
+export const getCandidateAiAssessment = ah(async (req, res) => {
+  const app = await tenantApp(req, req.params.id!);
+  const fullApp = await prisma.application.findUniqueOrThrow({
+    where: { id: app.id },
+    include: {
+      job: true,
+      user: { select: { email: true, displayName: true } },
+      assessmentInvites: { include: { template: { include: { questions: true } } }, orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  const existingInvite = fullApp.assessmentInvites[0];
+  if (existingInvite?.template) {
+    const examUrl = `${env.WEB_ORIGIN}/${tenantOf(req).slug}/applications/${app.id}/assessments/${existingInvite.id}`;
+    return res.json({
+      ok: true,
+      status: existingInvite.status,
+      inviteId: existingInvite.id,
+      examUrl,
+      dueAt: existingInvite.dueAt,
+      template: {
+        id: existingInvite.template.id,
+        title: existingInvite.template.title,
+        durationMinutes: existingInvite.template.durationMinutes,
+        topics: existingInvite.template.topics,
+        questions: existingInvite.template.questions.map((q) => ({
+          id: q.id,
+          prompt: q.prompt,
+          options: q.options,
+          correctOptionIndex: q.correct[0] ?? 0,
+          points: q.points,
+        })),
+      },
+    });
+  }
+
+  const profile = await prisma.candidateProfile.findUnique({
+    where: { userId_tenantId: { userId: fullApp.userId, tenantId: fullApp.tenantId } },
+  });
+  const summaryParsed = resumeSummarySchema.safeParse(fullApp.resumeSummary ?? {});
+  const summary = summaryParsed.success ? summaryParsed.data : null;
+  const candidateName = profile ? `${profile.firstName} ${profile.lastName}`.trim() : fullApp.user.displayName || "Candidate";
+
+  const generated = await generateCandidateAssessmentQuestions({
+    jobTitle: fullApp.job.title,
+    jobDescription: (fullApp.job as any).description || (fullApp.job as any).summary,
+    candidateName,
+    candidateSkills: summary?.skills ?? [],
+    candidateExperience: summary?.totalExperience || (profile?.experience ? String(profile.experience) : undefined),
+    candidateRole: summary?.currentRole,
+    count: 5,
+  });
+
+  res.json({ ok: true, status: "READY_FOR_APPROVAL", assessment: generated });
+});
+
+export const approveAndSendAssessment = ah(async (req, res) => {
+  const app = await tenantApp(req, req.params.id!);
+  const tenant = tenantOf(req);
+  const user = userOf(req);
+
+  const fullApp = await prisma.application.findUniqueOrThrow({
+    where: { id: app.id },
+    include: {
+      job: true,
+      user: true,
+      assessmentInvites: { include: { template: true }, orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  const profile = await prisma.candidateProfile.findUnique({
+    where: { userId_tenantId: { userId: fullApp.userId, tenantId: fullApp.tenantId } },
+  });
+  const summaryParsed = resumeSummarySchema.safeParse(fullApp.resumeSummary ?? {});
+  const summary = summaryParsed.success ? summaryParsed.data : null;
+  const candidateName = profile ? `${profile.firstName} ${profile.lastName}`.trim() : fullApp.user.displayName || "Candidate";
+
+  let templateId: string;
+  let templateTitle: string;
+  let durationMinutes = 45;
+
+  if (fullApp.assessmentInvites.length > 0 && fullApp.assessmentInvites[0]?.template) {
+    const existing = fullApp.assessmentInvites[0]!;
+    templateId = existing.template.id;
+    templateTitle = existing.template.title;
+    durationMinutes = existing.template.durationMinutes;
+  } else {
+    // Generate tailored assessment MCQs using Qwen
+    const generated = await generateCandidateAssessmentQuestions({
+      jobTitle: fullApp.job.title,
+      jobDescription: (fullApp.job as any).description || (fullApp.job as any).summary,
+      candidateName,
+      candidateSkills: summary?.skills ?? [],
+      candidateExperience: summary?.totalExperience || (profile?.experience ? String(profile.experience) : undefined),
+      candidateRole: summary?.currentRole,
+      count: 5,
+    });
+
+    const newTemplate = await prisma.assessmentTemplate.create({
+      data: {
+        tenantId: tenant.id,
+        title: generated?.title || `${fullApp.job.title} AI Technical Assessment - ${candidateName}`,
+        description: `Customized assessment generated for ${candidateName} for the role of ${fullApp.job.title}.`,
+        durationMinutes: generated?.durationMinutes || 45,
+        proctored: true,
+        topics: generated?.topics || (summary?.skills ?? []).slice(0, 5),
+        questions: {
+          create: (generated?.questions || []).map((q, i) => ({
+            order: i,
+            type: "SINGLE_CHOICE",
+            prompt: q.prompt,
+            options: q.options,
+            correct: [q.correctOptionIndex],
+            points: q.points,
+          })),
+        },
+      },
+    });
+
+    templateId = newTemplate.id;
+    templateTitle = newTemplate.title;
+    durationMinutes = newTemplate.durationMinutes;
+  }
+
+  // Set 72 hours (3 days) deadline
+  const dueAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+  const invite = await prisma.assessmentInvite.create({
+    data: {
+      applicationId: app.id,
+      templateId,
+      dueAt,
+      status: "INVITED",
+    },
+  });
+
+  // Advance application stage to ASSESSMENT
+  await advanceTo(app.id, "ASSESSMENT", user.id);
+
+  const examUrl = `${env.WEB_ORIGIN}/${tenant.slug}/applications/${app.id}/assessments/${invite.id}`;
+
+  // Publish milestone and dispatch email to candidate
+  await publishMilestone({
+    applicationId: app.id,
+    type: "assessment_invited",
+    data: { inviteId: invite.id, title: templateTitle, dueAt: dueAt.toISOString(), examUrl },
+    email: {
+      vars: {
+        assessmentTitle: templateTitle,
+        dueAt: dueAt.toUTCString(),
+        durationMinutes,
+        examUrl,
+      },
+    },
+    path: `/${tenant.slug}/applications/${app.id}/assessments/${invite.id}`,
+  });
+
+  res.status(201).json({
+    ok: true,
+    inviteId: invite.id,
+    examUrl,
+    dueAt: dueAt.toISOString(),
+    candidateEmail: fullApp.user.email,
+    candidateName,
+    templateTitle,
+    durationMinutes,
+  });
 });
 
 export const getProctoringReview = ah(async (req, res) => {

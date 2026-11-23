@@ -1,9 +1,9 @@
 import { prisma, type Prisma } from "@verity/db";
-import { resumeSummarySchema, type ResumeSummary } from "@verity/shared";
+import { type ResumeSummary } from "@verity/shared";
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
-import { aiEnabled, env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import { extractAndSummariseResume } from "./ai.service.js";
 import { storage } from "./storage.service.js";
 
 const MAX_CHARS = 30_000;
@@ -44,42 +44,9 @@ export async function extractResumeText(storageKey: string, mime: string): Promi
   return null;
 }
 
-const SYSTEM_PROMPT = [
-  "You extract job-related facts from a CV for a hiring team.",
-  "Return JSON with keys: currentRole, totalExperience, education (array), skills (array), certifications (array).",
-  "Only include facts written in the CV. Do not guess or embellish.",
-  "Never include or infer age, date of birth, gender, marital status, religion, caste, ethnicity, nationality,",
-  "health, disability, photographs, family details or any other personal trait.",
-].join(" ");
-
-/** Structured, job-related read of the CV via an OpenAI-compatible endpoint. */
+/** Structured, job-related read of the CV via Qwen AI / AI gateway. */
 export async function summariseResume(text: string): Promise<ResumeSummary | null> {
-  if (!aiEnabled) return null;
-  try {
-    const res = await fetch(`${env.AI_BASE_URL!.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${env.AI_API_KEY}` },
-      signal: AbortSignal.timeout(45_000),
-      body: JSON.stringify({
-        model: env.AI_MODEL,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: text },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error(`AI HTTP ${res.status}`);
-    const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = body.choices?.[0]?.message?.content;
-    if (!content) return null;
-    const parsed = resumeSummarySchema.safeParse(JSON.parse(content));
-    return parsed.success ? parsed.data : null;
-  } catch (err) {
-    logger.warn({ err }, "resume summary failed");
-    return null;
-  }
+  return extractAndSummariseResume(text);
 }
 
 /** Background job: read the uploaded CV and store text + summary on the application. */

@@ -33,6 +33,11 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        "/auth/oidc": {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: false,
+        },
         "/socket.io": {
           target: apiTarget,
           ws: true,
