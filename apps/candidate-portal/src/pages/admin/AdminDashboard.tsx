@@ -46,6 +46,7 @@ import { JobDescriptionEditor } from "./JobDescriptionEditor";
 import { BrutallyScoreModule, getScreeningCutoffThreshold } from "./BrutallyScoreModule";
 import { AssessmentRoundsStudio } from "./AssessmentRoundsStudio";
 import { InterviewSlotsModule } from "./InterviewSlotsModule";
+import { InterviewsModule } from "./InterviewsModule";
 import { OfferModule } from "./OfferModule";
 import { OnboardingModule } from "./OnboardingModule";
 import {
@@ -2517,118 +2518,23 @@ export function AdminDashboard() {
 
         {/* TAB: INTERVIEWS */}
         {activeTab === "interviews" && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight text-ink">Technical Interviews & LiveKit RTC</h1>
-                <p className="text-sm text-ink-muted">
-                  Configurable interview rounds, live WebRTC video rooms, panel evaluations, and stage progression.
-                </p>
-              </div>
-              <Button
-                icon={<Plus size={18} />}
-                onClick={() => {
-                  setScheduleTargetApp(applications[0] || null);
-                  setScheduleModalOpen(true);
-                }}
-              >
-                Schedule New Interview
-              </Button>
-            </div>
-
-            {/* Quick Metrics */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Card className="flex items-center gap-4 p-5">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-brand">
-                  <Video size={24} />
-                </span>
-                <div>
-                  <span className="text-xs font-semibold text-ink-muted block uppercase tracking-wider">Scheduled Rounds</span>
-                  <span className="font-display text-2xl font-bold text-ink">{interviews.length}</span>
-                </div>
-              </Card>
-              <Card className="flex items-center gap-4 p-5">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
-                  <Shield size={24} />
-                </span>
-                <div>
-                  <span className="text-xs font-semibold text-ink-muted block uppercase tracking-wider">SFU Audio/Video Engine</span>
-                  <span className="font-display text-base font-bold text-teal-800">LiveKit Cloud (Active)</span>
-                </div>
-              </Card>
-              <Card className="flex items-center gap-4 p-5">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
-                  <Users size={24} />
-                </span>
-                <div>
-                  <span className="text-xs font-semibold text-ink-muted block uppercase tracking-wider">Hiring Panels</span>
-                  <span className="font-display text-base font-bold text-ink">Arun K. & Chandra S.</span>
-                </div>
-              </Card>
-            </div>
-
-            {/* Scheduled Interviews Table */}
-            <Card className="space-y-4">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-                    <th className="pb-3 pl-4">Candidate & Job</th>
-                    <th className="pb-3">Round Details</th>
-                    <th className="pb-3">Scheduled Time</th>
-                    <th className="pb-3">Panelists</th>
-                    <th className="pb-3 pr-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line/60">
-                  {interviews.map((int) => (
-                    <tr key={int.id} className="hover:bg-canvas/50 transition-colors">
-                      <td className="py-3.5 pl-4 flex items-center gap-3">
-                        <Avatar name={int.candidateName} size={34} />
-                        <div>
-                          <span className="font-bold text-xs text-ink block">{int.candidateName}</span>
-                          <span className="text-[11px] text-ink-muted">{int.jobTitle}</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5">
-                        <span className="font-semibold text-xs text-ink block">{int.roundName}</span>
-                        <span className="text-[11px] text-ink-muted">LiveKit Video & Audio Enabled</span>
-                      </td>
-                      <td className="py-3.5 text-xs font-medium text-brand">
-                        {int.scheduledAt}
-                      </td>
-                      <td className="py-3.5 text-xs text-ink-2">
-                        {int.interviewerName}
-                      </td>
-                      <td className="py-3.5 pr-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Link
-                            to={`/${tenant.slug}/applications/app-101/interviews/round-1/join`}
-                            target="_blank"
-                            className="rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-bold px-3 py-1.5 transition-colors no-underline inline-flex items-center gap-1 shadow-xs"
-                          >
-                            <span>Join Video Call</span> ↗
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const matching = applications.find((a) => a.candidateName === int.candidateName) || applications[0];
-                              if (matching) {
-                                setOfferApp(matching);
-                                setOfferModalOpen(true);
-                              }
-                            }}
-                            className="rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-bold px-2.5 py-1.5 transition-colors"
-                          >
-                            Pass → Issue Offer
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-          </div>
+          <InterviewsModule
+            jobs={jobs}
+            applications={applications}
+            onUpdateApplications={setApplications}
+            tenant={tenant}
+            onNavigateToOffer={(candidateId) => {
+              const target = applications.find(
+                (a) => a.id === candidateId || a.candidateName === candidateId
+              );
+              if (target) {
+                setOfferApp(target);
+                setOfferModalOpen(true);
+              } else {
+                setActiveTab("offers");
+              }
+            }}
+          />
         )}
 
         {/* TAB: INTERVIEW SLOTS MODULE */}

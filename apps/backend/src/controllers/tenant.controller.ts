@@ -604,26 +604,23 @@ Respond ONLY with valid JSON in this exact structure:
   }
 }`;
       } else {
-        // MANAGERIAL
-        prompt = `You are an Executive Engineering Manager designing behavioral and leadership interview questions for a hiring panel.
-Analyze this Job Description and Candidate Resume, and generate 4 targeted managerial evaluation scenarios.
-Job Title: ${role}
-Job Description: ${jd}
-Candidate Resume: ${resume}
-
-Respond ONLY with valid JSON in this exact structure:
-{
-  "managerQuestions": [
-    {
-      "id": "m-1",
-      "question": "Behavioral question here?",
-      "scenario": "Hypothetical engineering conflict, tradeoff, or delivery deadline scenario",
-      "competency": "Technical Leadership & Ownership",
-      "evaluationCriteria": "What a top candidate response demonstrates",
-      "maxScore": 25
-    }
-  ]
-}`;
+        // MANAGERIAL: Do not generate questions for this round. HR creates a LiveKit video call room.
+        const roomSlug = `bh-manager-${role.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-r3`;
+        return res.json({
+          ok: true,
+          source: "LIVEKIT_ENGINE",
+          data: {
+            isLivekitRound: true,
+            message: "Manager round is a live video interview room powered by LiveKit RTC. No static questions are generated.",
+            livekitRoom: {
+              roomName: roomSlug,
+              roomUrl: `https://meet.livekit.io/${roomSlug}-${Math.random().toString(36).slice(2, 7)}`,
+              interviewerName: "Tanuja HR & Engineering Manager",
+              interviewerEmail: "hr@brutallyhired.com",
+              status: "READY",
+            },
+          },
+        });
       }
 
       const parsed = await callAiJson<any>({
@@ -680,45 +677,21 @@ Respond ONLY with valid JSON in this exact structure:
     });
   }
 
-  // MANAGERIAL
+  // MANAGERIAL - Do not generate any questions; LiveKit Video Call Room instead
+  const roomSlug = `bh-manager-${role.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-r3`;
   return res.json({
     ok: true,
-    source: "FALLBACK_ENGINE",
+    source: "LIVEKIT_ENGINE",
     data: {
-      managerQuestions: [
-        {
-          id: `m-1`,
-          question: `Describe a situation in your recent experience where an urgent production bug conflicted with a strategic quarterly deliverable. How did you prioritize?`,
-          scenario: `P0 severity customer latency degradation discovered 48 hours before a scheduled enterprise feature release.`,
-          competency: "Prioritization & Triage",
-          evaluationCriteria: `Candidate demonstrates clear stakeholder communication, customer impact assessment, root cause isolation, and pragmatic deadline renegotiation.`,
-          maxScore: 25,
-        },
-        {
-          id: `m-2`,
-          question: `How do you handle technical disagreements within your engineering team when two senior peers advocate fundamentally opposing architecture approaches?`,
-          scenario: `Debate between adopting GraphQL federation versus REST with BFF (Backend For Frontend) for the next-gen client portal.`,
-          competency: "Collaboration & Conflict Resolution",
-          evaluationCriteria: `Demonstrates data-driven decision making, prototyping/benchmarking before deciding, disagreement with commitment (agree and commit), and psychological safety.`,
-          maxScore: 25,
-        },
-        {
-          id: `m-3`,
-          question: `Tell us about a time you mentored a junior engineer who was struggling to deliver within sprint commitments. What specific interventions did you make?`,
-          scenario: `Junior engineer missing story points due to unclear acceptance criteria and hesitation to ask for pairing sessions.`,
-          competency: "Mentorship & People Growth",
-          evaluationCriteria: `Constructive 1:1 feedback, breaking down user stories into smaller verifiable units, structured pair programming, and tracking incremental confidence.`,
-          maxScore: 25,
-        },
-        {
-          id: `m-4`,
-          question: `How do you measure engineering excellence and quality standards beyond lines of code or story points in this ${role} position?`,
-          scenario: `Team delivering fast but accumulating technical debt and flaking automated CI/CD pipelines.`,
-          competency: "Engineering Quality & Standards",
-          evaluationCriteria: `Focuses on DORA metrics (deployment frequency, lead time, MTTR, change failure rate), test coverage, observability, and proactive blameless post-mortems.`,
-          maxScore: 25,
-        },
-      ],
+      isLivekitRound: true,
+      message: "Manager round is a live video call room powered by LiveKit RTC. No static questions are generated.",
+      livekitRoom: {
+        roomName: roomSlug,
+        roomUrl: `https://meet.livekit.io/${roomSlug}-${Math.random().toString(36).slice(2, 7)}`,
+        interviewerName: "Tanuja HR & Engineering Manager",
+        interviewerEmail: "hr@brutallyhired.com",
+        status: "READY",
+      },
     },
   });
 });

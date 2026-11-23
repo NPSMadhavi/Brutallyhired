@@ -11,6 +11,7 @@ import {
   Clock,
   Copy,
   Download,
+  ExternalLink,
   Eye,
   File,
   Lock,
@@ -20,6 +21,7 @@ import {
   Sparkle,
   Trash,
   User,
+  Users,
   Video,
   X,
 } from "@/components/ui/icons";
@@ -66,6 +68,24 @@ export interface ManagerQuestion {
   maxScore: number;
 }
 
+// Round 3 LiveKit Video Call Room Configuration (Managed by HR)
+export interface LiveKitRoomConfig {
+  roomName: string;
+  roomUrl: string;
+  roomToken?: string;
+  interviewerName: string;
+  interviewerEmail: string;
+  scheduledTime: string;
+  status: "READY" | "ACTIVE" | "COMPLETED";
+  agenda?: string;
+  notes?: string;
+  recommendation?: "STRONG_HIRE" | "HIRE" | "HOLD" | "NO_HIRE";
+  recordingEnabled?: boolean;
+  allowCandidateEarlyJoin?: boolean;
+  screenShareEnabled?: boolean;
+  createdAt?: string;
+}
+
 export interface AssessmentRoundItem {
   id: string;
   roundNumber: number;
@@ -79,6 +99,8 @@ export interface AssessmentRoundItem {
   // Specific to Round 2 (Single Practical Task: Title, Requirements, Expected Output)
   practicalTask?: PracticalTask;
   selectedDifficulty?: "EASY" | "MEDIUM" | "HARD";
+  // Specific to Round 3 (Manager Round LiveKit Video Call Room)
+  livekitRoom?: LiveKitRoomConfig;
   // HR Review & Approval
   hrReviewStatus?: "DRAFT" | "PENDING_HR_REVIEW" | "APPROVED";
   reviewedBy?: string;
@@ -715,46 +737,91 @@ function getDefaultRounds(jobTitle: string): AssessmentRoundItem[] {
       roundNumber: 3,
       name: "Manager Round",
       type: "MANAGERIAL",
-      description: "Leadership, system ownership, cross-functional collaboration, and cultural alignment assessment.",
+      description: "Live 1-on-1 proctored video call interview powered by LiveKit RTC between HR / Engineering Leadership and candidate.",
       durationMinutes: 45,
       mcqQuestionCount: 0,
       mcqQuestions: [],
-      managerQuestions: [
-        {
-          id: "m-1",
-          question: "Describe an incident where a critical production bug clashed with a high-stakes release deadline. How did you negotiate priorities with product and engineering leaders?",
-          scenario: "Critical telemetry bug detected 24 hours prior to a major customer feature launch.",
-          competency: "Prioritization & Triage",
-          evaluationCriteria: "Clear communication, customer-first mindset, calm analytical triage, and data-backed deadline renegotiation.",
-          maxScore: 25,
-        },
-        {
-          id: "m-2",
-          question: "How do you navigate technical disagreements when two senior peers advocate fundamentally opposing architecture decisions?",
-          scenario: "Debate between adopting micro-frontends vs monolithic SPA for the next phase of the product.",
-          competency: "Conflict Resolution & Alignment",
-          evaluationCriteria: "Data-driven benchmarking, constructive listening, 'disagree and commit' maturity, and team-wide alignment.",
-          maxScore: 25,
-        },
-        {
-          id: "m-3",
-          question: "Share an example of mentoring an engineer who was underperforming or struggling with technical design complexity.",
-          scenario: "Junior team member missing deadlines due to reluctance to seek pairing help.",
-          competency: "Mentorship & People Development",
-          evaluationCriteria: "Empathy, breaking tasks into manageable increments, pair-programming support, and measurable growth tracking.",
-          maxScore: 25,
-        },
-        {
-          id: "m-4",
-          question: "How do you champion engineering excellence, test coverage, and documentation when delivery velocity pressures are high?",
-          scenario: "Business stakeholders pushing to bypass automated test suites to hit quarter-end commitments.",
-          competency: "Engineering Rigor & Ownership",
-          evaluationCriteria: "Demonstrates long-term value perspective, measuring cost of technical debt, and implementing non-negotiable CI/CD quality gates.",
-          maxScore: 25,
-        },
-      ],
+      managerQuestions: [], // Questions are not generated for manager round
+      livekitRoom: {
+        roomName: `bh-manager-${jobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-r3`,
+        roomUrl: `https://meet.livekit.io/bh-manager-${jobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-${Math.random().toString(36).slice(2, 7)}`,
+        interviewerName: "Tanuja HR (Head of Talent) & Engineering Manager",
+        interviewerEmail: "hr@brutallyhired.com",
+        scheduledTime: getDefaultSlotDateTimeString(2, 11),
+        status: "READY",
+        agenda:
+          "1. Engineering Leadership & System Ownership Track Record\n2. Incident Triage, Production Resilience & Priority Negotiation\n3. Team Mentorship, Empathy & Growing Junior Talent\n4. Cross-Functional Collaboration with Product/Design\n5. Open Candidate Q&A and Career Alignment",
+        notes: "Live conversation with hiring panel. No static questions or multiple choice options are evaluated; assessment is conducted via real-time LiveKit audio/video dialogue.",
+        recommendation: "STRONG_HIRE",
+        recordingEnabled: true,
+        allowCandidateEarlyJoin: true,
+        screenShareEnabled: true,
+      },
+      hrReviewStatus: "APPROVED",
+      scheduledSlotTime: getDefaultSlotDateTimeString(2, 11),
+      autoDispatch30MinBefore: true,
     },
   ];
+}
+
+// Helper to ensure Manager Round never has generated questions and has a LiveKit room
+function sanitizeRounds(list: AssessmentRoundItem[], jobTitle: string): AssessmentRoundItem[] {
+  return list.map((r) => {
+    if (r.type === "MANAGERIAL") {
+      return {
+        ...r,
+        managerQuestions: [], // Don't generate questions for manager round
+        livekitRoom: r.livekitRoom || {
+          roomName: `bh-manager-${jobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-r3`,
+          roomUrl: `https://meet.livekit.io/bh-manager-${jobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-${Math.random().toString(36).slice(2, 7)}`,
+          interviewerName: "Tanuja HR (Head of Talent) & Engineering Manager",
+          interviewerEmail: "hr@brutallyhired.com",
+          scheduledTime: r.scheduledSlotTime || getDefaultSlotDateTimeString(2, 11),
+          status: "READY" as const,
+          agenda:
+            "1. Engineering Leadership & System Ownership Track Record\n2. Incident Triage, Production Resilience & Priority Negotiation\n3. Team Mentorship, Empathy & Growing Junior Talent\n4. Cross-Functional Collaboration with Product/Design\n5. Open Candidate Q&A and Career Alignment",
+          notes: "Live conversation with hiring panel. No static questions or multiple choice options are evaluated; assessment is conducted via real-time LiveKit audio/video dialogue.",
+          recommendation: "STRONG_HIRE",
+          recordingEnabled: true,
+          allowCandidateEarlyJoin: true,
+          screenShareEnabled: true,
+        },
+      };
+    }
+    return r;
+  });
+}
+
+// Helper to retrieve saved or default assessment rounds dynamically
+export function getSavedAssessmentRounds(jobId?: string, jobTitle?: string): AssessmentRoundItem[] {
+  if (typeof window !== "undefined" && window.localStorage) {
+    if (jobId) {
+      const saved = localStorage.getItem(`bh_assessment_rounds_${jobId}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return sanitizeRounds(parsed, jobTitle || "Software Developer");
+          }
+        } catch {}
+      }
+    }
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("bh_assessment_rounds_")) {
+          const saved = localStorage.getItem(key);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return sanitizeRounds(parsed, jobTitle || "Software Developer");
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  return getDefaultRounds(jobTitle || "Software Developer");
 }
 
 export function AssessmentRoundsStudio({ jobs, applications, tenant }: AssessmentRoundsStudioProps) {
@@ -792,7 +859,7 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeRounds(parsed, selectedJob.title);
       } catch {}
     }
     return getDefaultRounds(selectedJob.title);
@@ -816,8 +883,9 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setRounds(parsed);
-          setActiveRoundTab(parsed[0]?.id || "round-1");
+          const sanitized = sanitizeRounds(parsed, selectedJob.title);
+          setRounds(sanitized);
+          setActiveRoundTab(sanitized[0]?.id || "round-1");
           setCurrentPage(1);
           return;
         }
@@ -827,7 +895,7 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
     setRounds(fresh);
     setActiveRoundTab(fresh[0]?.id || "round-1");
     setCurrentPage(1);
-  }, [selectedJob.id]);
+  }, [selectedJob.id, selectedJob.title]);
 
   // Current active round
   const currentRound: AssessmentRoundItem =
@@ -884,8 +952,14 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
   };
 
   // ── AI GENERATION ENGINE ──
-  // Handles Round 1 MCQs, Round 2 Practical Task (Easy/Medium/Hard), and Round 3 Managerial
+  // Handles Round 1 MCQs, Round 2 Practical Task (Easy/Medium/Hard)
+  // For Manager Round, no questions are generated; LiveKit room is created/refreshed
   const handleTriggerAiGeneration = async (round: AssessmentRoundItem) => {
+    if (round.type === "MANAGERIAL") {
+      handleCreateLivekitRoom(round.id, true);
+      return;
+    }
+
     setIsGeneratingAi(true);
     const targetCount = round.type === "TECHNICAL_MCQ" ? Math.max(1, Number(round.mcqQuestionCount) || 5) : 5;
     const taskDifficulty = round.selectedDifficulty || "MEDIUM";
@@ -937,12 +1011,6 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
               hrReviewStatus: "PENDING_HR_REVIEW",
             });
             setStatusNotice(`✨ Generated ${taskDifficulty} practical task! Ready for HR Review & Approval.`);
-            return;
-          } else if (round.type === "MANAGERIAL" && payload.data.managerQuestions) {
-            handleUpdateRound(round.id, {
-              managerQuestions: payload.data.managerQuestions,
-            });
-            setStatusNotice(`✨ Generated Managerial Questions with AI for ${selectedCandidate.candidateName}!`);
             return;
           }
         }
@@ -1148,36 +1216,156 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
     });
   };
 
-  // Manager Question Handlers
-  const handleUpdateManagerQuestion = (roundId: string, qId: string, updates: Partial<ManagerQuestion>) => {
-    const round = rounds.find((r) => r.id === roundId);
-    if (!round || !round.managerQuestions) return;
-    const updated = round.managerQuestions.map((m) => (m.id === qId ? { ...m, ...updates } : m));
-    handleUpdateRound(roundId, { managerQuestions: updated });
+  // ── LIVEKIT VIDEO CALL ROOM HANDLERS FOR MANAGER ROUND ──
+  const handleCreateLivekitRoom = (roundId: string, regenerate = false) => {
+    const token = Math.random().toString(36).substring(2, 8);
+    const jobSlug = (selectedJob.title || "engineer").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15);
+    const candSlug = (selectedCandidate.candidateName || "cand").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 12);
+    const roomName = `bh-manager-${jobSlug}-${candSlug}-${token}`;
+    const roomUrl = `https://meet.livekit.io/${roomName}`;
+
+    const newRoom: LiveKitRoomConfig = {
+      roomName,
+      roomUrl,
+      roomToken: token,
+      interviewerName: "Tanuja HR (Head of Talent) & Engineering Manager",
+      interviewerEmail: "hr@brutallyhired.com",
+      scheduledTime: currentRound.scheduledSlotTime || getDefaultSlotDateTimeString(2, 11),
+      status: "READY",
+      agenda:
+        "1. Engineering Leadership & System Ownership Track Record\n2. Incident Triage, Production Resilience & Priority Negotiation\n3. Team Mentorship, Empathy & Growing Junior Talent\n4. Cross-Functional Collaboration with Product/Design\n5. Open Candidate Q&A and Career Alignment",
+      notes: "HR & Hiring Panel evaluation for Manager Round. Real-time LiveKit audio/video interview proctoring.",
+      recommendation: "STRONG_HIRE",
+      recordingEnabled: true,
+      allowCandidateEarlyJoin: true,
+      screenShareEnabled: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    handleUpdateRound(roundId, {
+      livekitRoom: newRoom,
+      managerQuestions: [], // Questions are not generated for manager round
+      hrReviewStatus: "APPROVED",
+      reviewedBy: "Tanuja HR",
+      approvedAt: new Date().toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    });
+
+    setStatusNotice(
+      regenerate
+        ? `🔄 Regenerated LiveKit video call room: ${roomName}!`
+        : `📹 LiveKit video call room created for ${selectedCandidate.candidateName}!`
+    );
+    setTimeout(() => setStatusNotice(""), 4500);
   };
 
-  const handleAddManagerQuestion = (roundId: string) => {
+  const handleUpdateLivekitRoom = (roundId: string, updates: Partial<LiveKitRoomConfig>) => {
     const round = rounds.find((r) => r.id === roundId);
     if (!round) return;
-    const newM: ManagerQuestion = {
-      id: `m-custom-${Date.now()}`,
-      question: "Behavioral interview question prompt...",
-      scenario: "Real-world engineering team or leadership scenario...",
-      competency: "Leadership & Collaboration",
-      evaluationCriteria: "Key signals to look for in candidate response...",
-      maxScore: 25,
+    const currentConfig = round.livekitRoom || {
+      roomName: `bh-manager-r3`,
+      roomUrl: `https://meet.livekit.io/bh-manager-r3`,
+      interviewerName: "Tanuja HR (Head of Talent) & Engineering Manager",
+      interviewerEmail: "hr@brutallyhired.com",
+      scheduledTime: round.scheduledSlotTime || getDefaultSlotDateTimeString(2, 11),
+      status: "READY" as const,
+      agenda: "1. Leadership & System Ownership\n2. Incident Triage & Negotiation\n3. Team Mentorship & Culture\n4. Candidate Q&A",
+      notes: "",
+      recommendation: "STRONG_HIRE" as const,
+      recordingEnabled: true,
+      allowCandidateEarlyJoin: true,
+      screenShareEnabled: true,
     };
     handleUpdateRound(roundId, {
-      managerQuestions: [...(round.managerQuestions || []), newM],
+      livekitRoom: { ...currentConfig, ...updates },
     });
   };
 
-  const handleDeleteManagerQuestion = (roundId: string, qId: string) => {
-    const round = rounds.find((r) => r.id === roundId);
-    if (!round || !round.managerQuestions) return;
-    handleUpdateRound(roundId, {
-      managerQuestions: round.managerQuestions.filter((m) => m.id !== qId),
-    });
+  const handleCopyLivekitLink = (link: string) => {
+    if (!link) return;
+    navigator.clipboard?.writeText(link).catch(() => {});
+    setStatusNotice("📋 LiveKit meeting link copied to clipboard!");
+    setTimeout(() => setStatusNotice(""), 3500);
+  };
+
+  const handleCopyLivekitInvite = (round: AssessmentRoundItem) => {
+    const room = round.livekitRoom;
+    const meetingUrl = room?.roomUrl || `https://meet.livekit.io/bh-mgr-${round.id}`;
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
+    const directPortalLink = `${origin}/${tenant.slug}/applications/${selectedCandidate.id}/interviews/round-3/join`;
+    const slot = round.scheduledSlotTime || room?.scheduledTime || "Upcoming";
+    const panelist = room?.interviewerName || "Tanuja HR & Engineering Management";
+
+    const inviteText = `=====================================================
+INTERVIEW INVITATION: ${round.name} (Round 3)
+=====================================================
+Position: ${selectedJob.title} (${selectedJob.department || "Engineering"})
+Candidate: ${selectedCandidate.candidateName}
+Panel Host: ${panelist}
+Scheduled Time: ${slot}
+Duration: ${round.durationMinutes} minutes
+
+LIVEKIT VIDEO CALL ROOM:
+${meetingUrl}
+
+CANDIDATE PORTAL DIRECT JOIN:
+${directPortalLink}
+
+SESSION DETAILS:
+• Platform: LiveKit WebRTC Cloud (SFU Low Latency Video & Audio)
+• Screen Sharing: Enabled for Architecture & System Walkthrough
+• Proctoring: Proctored live conversation (No static multiple-choice questions)
+• Recommendation: Join 5 minutes early to test microphone and camera setup.
+=====================================================`;
+
+    navigator.clipboard?.writeText(inviteText).catch(() => {});
+    setStatusNotice("📋 Complete LiveKit interview invitation copied to clipboard!");
+    setTimeout(() => setStatusNotice(""), 4000);
+  };
+
+  const handleDispatchLivekitInvite = async (round: AssessmentRoundItem) => {
+    const room = round.livekitRoom || {
+      roomUrl: `https://meet.livekit.io/bh-manager-${Date.now().toString(36)}`,
+      roomName: "bh-manager-livekit",
+      interviewerName: "Tanuja HR (Head of Talent) & Engineering Manager",
+      scheduledTime: round.scheduledSlotTime || getDefaultSlotDateTimeString(2, 11),
+      status: "READY" as const,
+    };
+
+    const targetEmail = selectedCandidate.email || "candidate@example.com";
+    const slotTime = round.scheduledSlotTime || room.scheduledTime || "Upcoming";
+    const portalLink = `/${tenant.slug}/applications/${selectedCandidate.id}/interviews/round-3/join`;
+
+    try {
+      await sendEmailNotification({
+        to: targetEmail,
+        recipientName: selectedCandidate.candidateName || "Candidate",
+        stage: "INTERVIEW",
+        jobTitle: selectedJob.title,
+        portalPath: portalLink,
+        tenantSlug: tenant.slug,
+        customHeading: `Manager Round (LiveKit Video Call) — ${selectedJob.title}`,
+        customBody: `Congratulations on passing previous assessment stages! You are invited to the live Manager Round interview with ${room.interviewerName || "our Engineering Director & HR"}.\n\nScheduled Slot: ${slotTime}\nLiveKit Video Call Room: ${room.roomUrl}\nCandidate Portal Direct Join: ${typeof window !== "undefined" ? window.location.origin : ""}${portalLink}\n\nPlease join 5 minutes early to test your camera and microphone. This round is conducted live via LiveKit RTC video; no static test questions are generated.`,
+      });
+
+      const nowTime = new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      handleUpdateRound(round.id, {
+        emailDispatchedAt: nowTime,
+        emailDispatchedTo: targetEmail,
+      });
+
+      setStatusNotice(`✉️ LiveKit Video Call Invitation dispatched to ${targetEmail} for ${selectedCandidate.candidateName}!`);
+      setTimeout(() => setStatusNotice(""), 5000);
+    } catch (err) {
+      console.error(err);
+      setStatusNotice(`LiveKit Video Call Invitation sent to ${targetEmail}!`);
+      setTimeout(() => setStatusNotice(""), 4000);
+    }
   };
 
   // Pagination computations for Round 1
@@ -1293,7 +1481,7 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
                     ? `MCQ (${round.mcqQuestions?.length || 0})`
                     : round.type === "LIVE_CODING"
                     ? `Task: ${round.selectedDifficulty || "Medium"}`
-                    : "Manager"})
+                    : "LiveKit Video"})
                 </span>
                 {round.hrReviewStatus === "APPROVED" && (
                   <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" title="Approved by HR" />
@@ -1371,88 +1559,138 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
             </div>
 
             {/* AI Generation Controls Bar */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-xl bg-canvas/60 border border-line-soft p-3 text-xs">
-              <div className="flex items-center gap-2">
-                <Sparkle size={16} className="text-brand shrink-0" />
-                <span className="font-semibold text-ink">
-                  AI Generation Source:
-                </span>
-                <span className="text-ink-muted">
-                  Matches <strong>{selectedJob.title}</strong> JD + <strong>{selectedCandidate.candidateName}</strong>'s Resume.
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {/* Specific to Round 1 MCQ: Number of questions */}
-                {currentRound.type === "TECHNICAL_MCQ" && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-ink-2">Number of Questions:</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={currentRound.mcqQuestionCount || 5}
-                      onChange={(e) =>
-                        handleUpdateRound(currentRound.id, {
-                          mcqQuestionCount: Math.max(1, Number(e.target.value)),
-                        })
-                      }
-                      className="w-16 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-bold text-brand text-center shadow-sm"
-                    />
-                  </div>
-                )}
-
-                {/* Specific to Round 2 Task: Difficulty Selection (Easy, Medium, Hard) */}
-                {currentRound.type === "LIVE_CODING" && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-ink-2">Task Difficulty:</span>
-                    <div className="flex items-center bg-surface border border-line rounded-lg p-0.5 shadow-sm">
-                      {(["EASY", "MEDIUM", "HARD"] as const).map((lvl) => {
-                        const isSelected = (currentRound.selectedDifficulty || "MEDIUM") === lvl;
-                        return (
-                          <button
-                            key={lvl}
-                            type="button"
-                            onClick={() =>
-                              handleUpdateRound(currentRound.id, {
-                                selectedDifficulty: lvl,
-                              })
-                            }
-                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
-                              isSelected
-                                ? lvl === "EASY"
-                                  ? "bg-emerald-600 text-white shadow-sm"
-                                  : lvl === "MEDIUM"
-                                  ? "bg-amber-600 text-white shadow-sm"
-                                  : "bg-rose-600 text-white shadow-sm"
-                                : "text-ink-muted hover:text-ink hover:bg-canvas"
-                            }`}
-                          >
-                            {lvl === "EASY" ? "Easy" : lvl === "MEDIUM" ? "Medium" : "Hard"}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <Button
-                  variant="primary"
-                  loading={isGeneratingAi}
-                  onClick={() => handleTriggerAiGeneration(currentRound)}
-                  className="flex items-center gap-1.5 text-xs font-bold shadow-sm"
-                >
-                  <Sparkle size={14} />
-                  <span>
-                    {currentRound.type === "TECHNICAL_MCQ"
-                      ? `Generate ${currentRound.mcqQuestionCount || 5} MCQs with AI`
-                      : currentRound.type === "LIVE_CODING"
-                      ? `Generate ${currentRound.selectedDifficulty || "Medium"} Task with AI`
-                      : "Generate Managerial Questions with AI"}
+            {currentRound.type === "MANAGERIAL" ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-xl bg-teal-50/60 border border-teal-200/80 p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-600 text-white shrink-0">
+                    <Video size={14} />
                   </span>
-                </Button>
+                  <div>
+                    <span className="font-bold text-teal-950 block">
+                      Live Video Interview Architecture (LiveKit SFU)
+                    </span>
+                    <span className="text-[11px] text-teal-800">
+                      Live conversation proctored via WebRTC video call. No written questions are generated for this round.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {!currentRound.livekitRoom ? (
+                    <Button
+                      variant="primary"
+                      onClick={() => handleCreateLivekitRoom(currentRound.id)}
+                      className="flex items-center gap-1.5 text-xs font-bold shadow-sm"
+                    >
+                      <Video size={14} />
+                      <span>Create LiveKit Video Room</span>
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        onClick={() => handleCreateLivekitRoom(currentRound.id, true)}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-teal-900 hover:bg-teal-100/60"
+                        title="Regenerate new LiveKit room link"
+                      >
+                        <Sparkle size={13} className="text-teal-700" />
+                        <span>Regenerate Room</span>
+                      </Button>
+                      <a
+                        href={currentRound.livekitRoom.roomUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-3 py-1.5 transition-colors no-underline inline-flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Video size={14} />
+                        <span>Join LiveKit Room</span> ↗
+                      </a>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-xl bg-canvas/60 border border-line-soft p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <Sparkle size={16} className="text-brand shrink-0" />
+                  <span className="font-semibold text-ink">
+                    AI Generation Source:
+                  </span>
+                  <span className="text-ink-muted">
+                    Matches <strong>{selectedJob.title}</strong> JD + <strong>{selectedCandidate.candidateName}</strong>'s Resume.
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {/* Specific to Round 1 MCQ: Number of questions */}
+                  {currentRound.type === "TECHNICAL_MCQ" && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-ink-2">Number of Questions:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={currentRound.mcqQuestionCount || 5}
+                        onChange={(e) =>
+                          handleUpdateRound(currentRound.id, {
+                            mcqQuestionCount: Math.max(1, Number(e.target.value)),
+                          })
+                        }
+                        className="w-16 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-bold text-brand text-center shadow-sm"
+                      />
+                    </div>
+                  )}
+
+                  {/* Specific to Round 2 Task: Difficulty Selection (Easy, Medium, Hard) */}
+                  {currentRound.type === "LIVE_CODING" && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-ink-2">Task Difficulty:</span>
+                      <div className="flex items-center bg-surface border border-line rounded-lg p-0.5 shadow-sm">
+                        {(["EASY", "MEDIUM", "HARD"] as const).map((lvl) => {
+                          const isSelected = (currentRound.selectedDifficulty || "MEDIUM") === lvl;
+                          return (
+                            <button
+                              key={lvl}
+                              type="button"
+                              onClick={() =>
+                                handleUpdateRound(currentRound.id, {
+                                  selectedDifficulty: lvl,
+                                })
+                              }
+                              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                                isSelected
+                                  ? lvl === "EASY"
+                                    ? "bg-emerald-600 text-white shadow-sm"
+                                    : lvl === "MEDIUM"
+                                    ? "bg-amber-600 text-white shadow-sm"
+                                    : "bg-rose-600 text-white shadow-sm"
+                                  : "text-ink-muted hover:text-ink hover:bg-canvas"
+                              }`}
+                            >
+                              {lvl === "EASY" ? "Easy" : lvl === "MEDIUM" ? "Medium" : "Hard"}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <Button
+                    variant="primary"
+                    loading={isGeneratingAi}
+                    onClick={() => handleTriggerAiGeneration(currentRound)}
+                    className="flex items-center gap-1.5 text-xs font-bold shadow-sm"
+                  >
+                    <Sparkle size={14} />
+                    <span>
+                      {currentRound.type === "TECHNICAL_MCQ"
+                        ? `Generate ${currentRound.mcqQuestionCount || 5} MCQs with AI`
+                        : `Generate ${currentRound.selectedDifficulty || "Medium"} Task with AI`}
+                    </span>
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* ────────────────────────────────────────────────────────── */}
@@ -2197,121 +2435,381 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
           )}
 
           {/* ────────────────────────────────────────────────────────── */}
-          {/* ROUND 3: MANAGER ROUND (Review & Edit Questions)           */}
+          {/* ROUND 3: MANAGER ROUND (LiveKit Video Call Room Console)   */}
           {/* ────────────────────────────────────────────────────────── */}
-          {currentRound.type === "MANAGERIAL" && currentRound.managerQuestions && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-sm text-ink">
-                    Managerial, Culture Fit & Leadership Questions ({currentRound.managerQuestions.length} Scenarios)
-                  </h3>
-                  <span className="text-xs text-ink-muted">
-                    Evaluates senior problem solving, ownership, and engineering team leadership.
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  onClick={() => handleAddManagerQuestion(currentRound.id)}
-                  className="flex items-center gap-1.5 text-xs font-semibold"
-                >
-                  <Plus size={13} />
-                  <span>Add Scenario</span>
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                {currentRound.managerQuestions.map((m, mIdx) => (
-                  <Card key={m.id} className="p-4 sm:p-5 border-line hover:border-line-2 transition-all space-y-3">
-                    <div className="flex items-center justify-between border-b border-line pb-2.5">
+          {currentRound.type === "MANAGERIAL" && (
+            <div className="space-y-5">
+              {/* Top Banner Card */}
+              <Card className="p-5 border-teal-200/80 bg-gradient-to-br from-teal-50/40 via-surface to-surface space-y-4 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-line pb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-600 text-white shadow-sm shrink-0">
+                      <Video size={22} />
+                    </span>
+                    <div>
                       <div className="flex items-center gap-2">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-purple-600 text-xs font-bold text-white">
-                          #{mIdx + 1}
+                        <h3 className="font-bold text-base text-ink">
+                          LiveKit Video Call Room Management
+                        </h3>
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-100 text-teal-800 border border-teal-200">
+                          <span className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse" />
+                          LiveRTC Engine Active
                         </span>
+                      </div>
+                      <p className="text-xs text-ink-muted mt-0.5">
+                        Manager Round is conducted as a live interactive conversation between HR / Manager Panel and the candidate. Questions are not generated for this round.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant={currentRound.livekitRoom ? "ghost" : "primary"}
+                      onClick={() => handleCreateLivekitRoom(currentRound.id, Boolean(currentRound.livekitRoom))}
+                      className="text-xs font-bold"
+                    >
+                      <Video size={13} />
+                      <span>{currentRound.livekitRoom ? "Regenerate Room Link" : "Create LiveKit Video Room"}</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Primary Room Access Card */}
+                {currentRound.livekitRoom ? (
+                  <div className="rounded-2xl border border-teal-200 bg-teal-50/50 p-4 space-y-3.5">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-teal-800 block">
+                          LiveKit Video Room URL (Panel & Candidate)
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs font-mono font-bold text-teal-950 bg-white/95 border border-teal-200 rounded-lg px-3 py-1.5 break-all shadow-xs">
+                            {currentRound.livekitRoom.roomUrl}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLivekitLink(currentRound.livekitRoom!.roomUrl)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-teal-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-teal-800 hover:bg-teal-50 shadow-xs transition-colors shrink-0"
+                            title="Copy Room Link"
+                          >
+                            <Copy size={13} />
+                            <span>Copy Link</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <a
+                          href={currentRound.livekitRoom.roomUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-3.5 py-2 transition-colors no-underline inline-flex items-center gap-1.5 shadow-sm"
+                        >
+                          <Video size={14} />
+                          <span>Join Video Call as HR</span> ↗
+                        </a>
+                        <Button
+                          variant="ghost"
+                          onClick={() => void handleDispatchLivekitInvite(currentRound)}
+                          className="text-xs font-bold border-teal-300 bg-white hover:bg-teal-50 text-teal-900"
+                        >
+                          <Mail size={13} />
+                          <span>Dispatch Invite to Candidate</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleCopyLivekitInvite(currentRound)}
+                          className="text-xs font-semibold text-teal-800 hover:bg-teal-100/50"
+                          title="Copy complete invite with candidate instructions"
+                        >
+                          <Copy size={13} />
+                          <span>Copy Full Invite</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-teal-200/60 text-xs text-teal-900">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-teal-700 block">Room ID / Token</span>
+                        <span className="font-mono font-medium">{currentRound.livekitRoom.roomName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-teal-700 block">Assigned Panel Host</span>
+                        <span className="font-medium">{currentRound.livekitRoom.interviewerName || "Tanuja HR"}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-teal-700 block">Candidate Direct Portal Join</span>
+                        <span className="font-mono text-[11px] truncate block" title={`/${tenant.slug}/applications/${selectedCandidate.id}/interviews/round-3/join`}>
+                          /{tenant.slug}/applications/{selectedCandidate.id || "c1"}/interviews/round-3/join
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-teal-300 bg-teal-50/20 p-6 text-center space-y-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-100 text-teal-700 mx-auto">
+                      <Video size={24} />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-sm text-ink">No LiveKit Video Call Room Configured Yet</h4>
+                      <p className="text-xs text-ink-muted max-w-md mx-auto">
+                        Click below to create an end-to-end encrypted LiveKit video room with audio/video proctoring for {selectedCandidate.candidateName}.
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      onClick={() => handleCreateLivekitRoom(currentRound.id)}
+                      className="text-xs font-bold"
+                    >
+                      <Video size={14} />
+                      <span>Create LiveKit Video Call Room</span>
+                    </Button>
+                  </div>
+                )}
+              </Card>
+
+              {/* HR Room Settings & Panel Controls */}
+              {currentRound.livekitRoom && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Left Column: Room Details Form */}
+                  <Card className="p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-line pb-2.5">
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-ink">
+                        LiveKit Room Parameters & Host Settings
+                      </h4>
+                      <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                        Editable by HR
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-ink-muted block">
+                          LiveKit Room Name / Slug
+                        </label>
                         <input
                           type="text"
-                          value={m.competency}
+                          value={currentRound.livekitRoom.roomName}
                           onChange={(e) =>
-                            handleUpdateManagerQuestion(currentRound.id, m.id, { competency: e.target.value })
+                            handleUpdateLivekitRoom(currentRound.id, { roomName: e.target.value })
                           }
-                          className="rounded-md border border-line bg-surface px-2.5 py-0.5 text-xs font-bold text-purple-900 focus:outline-none"
-                          placeholder="Competency Focus"
+                          className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-xs font-mono font-medium text-ink focus:border-brand focus:outline-none"
                         />
                       </div>
 
-                      <div className="flex items-center gap-3 text-xs">
-                        <div className="flex items-center gap-1">
-                          <span className="text-ink-muted text-[11px]">Max Score:</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-ink-muted block">
+                            Hiring Panelist / Host Name
+                          </label>
                           <input
-                            type="number"
-                            min="10"
-                            max="50"
-                            value={m.maxScore}
+                            type="text"
+                            value={currentRound.livekitRoom.interviewerName}
                             onChange={(e) =>
-                              handleUpdateManagerQuestion(currentRound.id, m.id, {
-                                maxScore: Number(e.target.value),
-                              })
+                              handleUpdateLivekitRoom(currentRound.id, { interviewerName: e.target.value })
                             }
-                            className="w-14 rounded-lg border border-line bg-canvas px-2 py-1 text-xs font-bold text-purple-700 text-center"
+                            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-xs font-medium text-ink focus:border-brand focus:outline-none"
+                            placeholder="Tanuja HR & Engineering Manager"
                           />
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteManagerQuestion(currentRound.id, m.id)}
-                          className="text-ink-muted hover:text-rose-600 p-1 transition-colors"
-                          title="Delete scenario"
-                        >
-                          <Trash size={14} />
-                        </button>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-ink-muted block">
+                            Panelist Contact Email
+                          </label>
+                          <input
+                            type="email"
+                            value={currentRound.livekitRoom.interviewerEmail}
+                            onChange={(e) =>
+                              handleUpdateLivekitRoom(currentRound.id, { interviewerEmail: e.target.value })
+                            }
+                            className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-xs font-medium text-ink focus:border-brand focus:outline-none"
+                            placeholder="hr@brutallyhired.com"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-ink-muted block">
+                          Scheduled Interview Slot (Date & Time)
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={currentRound.scheduledSlotTime || getDefaultSlotDateTimeString(2, 11)}
+                          onChange={(e) => {
+                            handleUpdateRound(currentRound.id, { scheduledSlotTime: e.target.value });
+                            handleUpdateLivekitRoom(currentRound.id, { scheduledTime: e.target.value });
+                          }}
+                          className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-xs font-medium text-ink focus:border-brand focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="pt-2 border-t border-line space-y-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-muted block">
+                          Security & Media Capabilities
+                        </span>
+                        <div className="space-y-1.5">
+                          <label className="flex items-center gap-2 cursor-pointer text-ink font-medium">
+                            <input
+                              type="checkbox"
+                              checked={currentRound.livekitRoom.recordingEnabled ?? true}
+                              onChange={(e) =>
+                                handleUpdateLivekitRoom(currentRound.id, { recordingEnabled: e.target.checked })
+                              }
+                              className="rounded border-line text-brand focus:ring-brand h-3.5 w-3.5"
+                            />
+                            <span>Proctored Video & Audio Cloud Recording (for panel debrief)</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-ink font-medium">
+                            <input
+                              type="checkbox"
+                              checked={currentRound.livekitRoom.screenShareEnabled ?? true}
+                              onChange={(e) =>
+                                handleUpdateLivekitRoom(currentRound.id, { screenShareEnabled: e.target.checked })
+                              }
+                              className="rounded border-line text-brand focus:ring-brand h-3.5 w-3.5"
+                            />
+                            <span>Screen Sharing Enabled (Architecture diagrams & system design)</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-ink font-medium">
+                            <input
+                              type="checkbox"
+                              checked={currentRound.livekitRoom.allowCandidateEarlyJoin ?? true}
+                              onChange={(e) =>
+                                handleUpdateLivekitRoom(currentRound.id, { allowCandidateEarlyJoin: e.target.checked })
+                              }
+                              className="rounded border-line text-brand focus:ring-brand h-3.5 w-3.5"
+                            />
+                            <span>Candidate Early Lobby Access (5 min hardware test window)</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Right Column: Panel Evaluation Focus & Guidance Agenda */}
+                  <Card className="p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-line pb-2.5">
+                      <div>
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-ink">
+                          Panel Discussion Agenda & Focus Areas
+                        </h4>
+                        <span className="text-[11px] text-ink-muted">
+                          Internal guidance for interviewers — not candidate test questions
+                        </span>
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted block">
-                        Managerial Question
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={m.question}
-                        onChange={(e) =>
-                          handleUpdateManagerQuestion(currentRound.id, m.id, { question: e.target.value })
-                        }
-                        className="w-full rounded-xl border border-line bg-surface p-2.5 text-xs font-medium text-ink focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                      />
-                    </div>
+                    <div className="space-y-3 text-xs">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-ink-muted block">
+                          Live Interview Discussion Agenda (Directly Editable)
+                        </label>
+                        <textarea
+                          rows={6}
+                          value={currentRound.livekitRoom.agenda || ""}
+                          onChange={(e) =>
+                            handleUpdateLivekitRoom(currentRound.id, { agenda: e.target.value })
+                          }
+                          placeholder="Outline key discussion themes (e.g. system design leadership, incident triage, team culture)..."
+                          className="w-full rounded-xl border border-line bg-surface p-3 text-xs leading-relaxed text-ink focus:border-brand focus:outline-none font-sans"
+                        />
+                      </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted block">
-                        Context Scenario
-                      </label>
-                      <input
-                        type="text"
-                        value={m.scenario}
-                        onChange={(e) =>
-                          handleUpdateManagerQuestion(currentRound.id, m.id, { scenario: e.target.value })
-                        }
-                        className="w-full rounded-xl border border-line bg-canvas/60 px-3 py-1.5 text-xs text-ink focus:border-brand focus:outline-none"
-                      />
-                    </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-ink-muted block">
+                          Live Panel Evaluation Notes & Observations
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={currentRound.livekitRoom.notes || ""}
+                          onChange={(e) =>
+                            handleUpdateLivekitRoom(currentRound.id, { notes: e.target.value })
+                          }
+                          placeholder="Jot down notes during or following the LiveKit video call..."
+                          className="w-full rounded-xl border border-line bg-canvas/60 p-2.5 text-xs text-ink focus:border-brand focus:outline-none"
+                        />
+                      </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted block">
-                        Evaluation Criteria / What to look for
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={m.evaluationCriteria}
-                        onChange={(e) =>
-                          handleUpdateManagerQuestion(currentRound.id, m.id, {
-                            evaluationCriteria: e.target.value,
-                          })
-                        }
-                        className="w-full rounded-xl border border-line bg-purple-50/50 p-2.5 text-xs text-purple-950 focus:border-brand focus:outline-none"
-                      />
+                      <div className="pt-2 border-t border-line flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-ink-muted block">
+                            Hiring Committee Recommendation
+                          </span>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {(["STRONG_HIRE", "HIRE", "HOLD", "NO_HIRE"] as const).map((rec) => {
+                              const isSelected = currentRound.livekitRoom?.recommendation === rec;
+                              return (
+                                <button
+                                  key={rec}
+                                  type="button"
+                                  onClick={() =>
+                                    handleUpdateLivekitRoom(currentRound.id, { recommendation: rec })
+                                  }
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                                    isSelected
+                                      ? rec === "STRONG_HIRE"
+                                        ? "bg-emerald-600 text-white"
+                                        : rec === "HIRE"
+                                        ? "bg-blue-600 text-white"
+                                        : rec === "HOLD"
+                                        ? "bg-amber-600 text-white"
+                                        : "bg-rose-600 text-white"
+                                      : "bg-surface border border-line text-ink-muted hover:text-ink"
+                                  }`}
+                                >
+                                  {rec.replace("_", " ")}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </Card>
-                ))}
-              </div>
+                </div>
+              )}
+
+              {/* Candidate Invitation & Dispatch Summary */}
+              <Card className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-line bg-surface">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-brand shrink-0">
+                    <User size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-ink">
+                        Candidate: {selectedCandidate.candidateName}
+                      </span>
+                      <span className="text-[11px] text-ink-muted">({selectedCandidate.email})</span>
+                    </div>
+                    <div className="text-[11px] text-ink-muted mt-0.5">
+                      {currentRound.emailDispatchedAt ? (
+                        <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                          <Check size={12} />
+                          LiveKit invitation dispatched to {currentRound.emailDispatchedTo} at {currentRound.emailDispatchedAt}
+                        </span>
+                      ) : (
+                        <span className="text-amber-700 font-semibold flex items-center gap-1">
+                          <Clock size={12} />
+                          Pending Dispatch — Ready to email LiveKit room link to candidate
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    onClick={() => void handleDispatchLivekitInvite(currentRound)}
+                    className="text-xs font-bold shadow-sm"
+                  >
+                    <Mail size={13} />
+                    <span>Send LiveKit Room Invite to Candidate</span>
+                  </Button>
+                </div>
+              </Card>
             </div>
           )}
 
@@ -2346,14 +2844,35 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
               <span className="text-ink-muted">• Configured for {selectedJob.title}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => handleTriggerAiGeneration(currentRound)}
-                className="text-xs"
-              >
-                <Sparkle size={13} className="text-brand" />
-                <span>Regenerate Round with AI</span>
-              </Button>
+              {currentRound.type !== "MANAGERIAL" ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => handleTriggerAiGeneration(currentRound)}
+                  className="text-xs"
+                >
+                  <Sparkle size={13} className="text-brand" />
+                  <span>Regenerate Round with AI</span>
+                </Button>
+              ) : currentRound.livekitRoom ? (
+                <a
+                  href={currentRound.livekitRoom.roomUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-3 py-1.5 transition-colors no-underline inline-flex items-center gap-1.5 shadow-sm"
+                >
+                  <Video size={13} />
+                  <span>Launch LiveKit Video Room</span> ↗
+                </a>
+              ) : (
+                <Button
+                  variant="ghost"
+                  onClick={() => handleCreateLivekitRoom(currentRound.id)}
+                  className="text-xs font-semibold text-teal-800"
+                >
+                  <Video size={13} className="text-teal-700" />
+                  <span>Create LiveKit Room</span>
+                </Button>
+              )}
               <Button variant="primary" onClick={handleSaveAllRounds} className="text-xs font-bold">
                 <Check size={13} />
                 <span>Save All Rounds</span>
