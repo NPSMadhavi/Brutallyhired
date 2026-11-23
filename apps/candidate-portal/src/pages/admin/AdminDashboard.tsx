@@ -37,8 +37,10 @@ import {
   Video,
   Wifi,
   X,
+  Trash,
 } from "@/components/ui/icons";
 import { Avatar, ScoreBadge, StagePill } from "@/components/ui/misc";
+import { ResumeDocViewer } from "@/components/common/ResumeDocViewer";
 import { applyBrand } from "@/lib/brand";
 import { initials } from "@/lib/format";
 import { generateJobDescription, generateJobDescriptionHtml } from "@/lib/jobGenerator";
@@ -466,11 +468,75 @@ export function AdminDashboard() {
     setOfferModalOpen(false);
   };
 
-  const staff: StaffItem[] = [
-    { id: "st-1", name: "Tanuja HR", email: "hr@brutallyhired.com", role: "ADMIN", title: "HR Director & Administrator" },
-    { id: "st-2", name: "Chandra Talent", email: "recruiting@brutallyhired.com", role: "RECRUITER", title: "Senior Tech Talent Partner" },
-    { id: "st-3", name: "Arun K.", email: "arun.arch@brutallyhired.com", role: "INTERVIEWER", title: "Principal Software Architect" },
-  ];
+  // Action Feedback Toast
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const showFeedback = (msg: string) => {
+    setActionFeedback(msg);
+    setTimeout(() => setActionFeedback(null), 3500);
+  };
+
+  // Universal Permission / Confirmation Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    actionType: "create" | "update" | "delete";
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  // Team (Staff) State with LocalStorage Persistence
+  const [staff, setStaff] = useState<StaffItem[]>(() => {
+    try {
+      const stored = localStorage.getItem("bh_admin_staff");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [
+      { id: "st-1", name: "Tanuja HR", email: "hr@brutallyhired.com", role: "ADMIN", title: "HR Director & Administrator" },
+      { id: "st-2", name: "Chandra Talent", email: "recruiting@brutallyhired.com", role: "RECRUITER", title: "Senior Tech Talent Partner" },
+      { id: "st-3", name: "Arun K.", email: "arun.arch@brutallyhired.com", role: "INTERVIEWER", title: "Principal Software Architect" },
+    ];
+  });
+
+  // Candidate CRUD States
+  const [addCandOpen, setAddCandOpen] = useState(false);
+  const [candName, setCandName] = useState("");
+  const [candEmail, setCandEmail] = useState("");
+  const [candPhone, setCandPhone] = useState("");
+  const [candCity, setCandCity] = useState("");
+  const [candJob, setCandJob] = useState("");
+  const [candStage, setCandStage] = useState("SUBMITTED");
+  const [candExp, setCandExp] = useState("Less than 2 years");
+  const [candScore, setCandScore] = useState(85);
+
+  const [editingCandidate, setEditingCandidate] = useState<ApplicationItem | null>(null);
+  const [editCandName, setEditCandName] = useState("");
+  const [editCandEmail, setEditCandEmail] = useState("");
+  const [editCandPhone, setEditCandPhone] = useState("");
+  const [editCandCity, setEditCandCity] = useState("");
+  const [editCandJob, setEditCandJob] = useState("");
+  const [editCandStage, setEditCandStage] = useState("SUBMITTED");
+  const [editCandExp, setEditCandExp] = useState("");
+  const [editCandScore, setEditCandScore] = useState(85);
+
+  // Job CRUD States
+  const [editingJob, setEditingJob] = useState<JobItem | null>(null);
+  const [editJobTitle, setEditJobTitle] = useState("");
+  const [editJobDept, setEditJobDept] = useState("");
+  const [editJobLoc, setEditJobLoc] = useState("");
+  const [editJobWorkplace, setEditJobWorkplace] = useState<"REMOTE" | "HYBRID" | "ONSITE">("HYBRID");
+  const [editJobExp, setEditJobExp] = useState("");
+  const [editJobStatus, setEditJobStatus] = useState<"OPEN" | "DRAFT" | "CLOSED">("OPEN");
+  const [editJobDesc, setEditJobDesc] = useState("");
+
+  // Team CRUD States
+  const [editingStaff, setEditingStaff] = useState<StaffItem | null>(null);
+  const [staffName, setStaffName] = useState("");
+  const [staffTitle, setStaffTitle] = useState("");
+  const [editStaffName, setEditStaffName] = useState("");
+  const [editStaffEmail, setEditStaffEmail] = useState("");
+  const [editStaffRole, setEditStaffRole] = useState<"ADMIN" | "RECRUITER" | "INTERVIEWER">("RECRUITER");
+  const [editStaffTitle, setEditStaffTitle] = useState("");
 
   // Modals & Controls
   const [viewJobModal, setViewJobModal] = useState<JobItem | null>(null);
@@ -1215,6 +1281,7 @@ export function AdminDashboard() {
     }
   };
 
+  // --- JOB CRUD WITH PERMISSION CONFIRMATION ---
   const handleCreateJob = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newJobTitle.trim()) {
@@ -1226,43 +1293,309 @@ export function AdminDashboard() {
       return;
     }
 
-    const item: JobItem = {
-      id: `job-${Date.now()}`,
-      externalRef:
-        newJobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
-        `job-${Date.now()}`,
-      title: newJobTitle.trim(),
-      department: newJobDept.trim() || "Technology",
-      location: newJobLoc.trim() || "Remote",
-      experience: newJobExp.trim() || undefined,
-      keywords: newJobKeywords.trim() || undefined,
-      publishedChannels: newJobChannels.length > 0 ? newJobChannels : ["Brutallyhired Portal"],
-      workplaceType: newJobWorkplace,
-      status: "OPEN",
-      description: newJobDesc.trim(),
-      applicantCount: 0,
-    };
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Create Job Opening",
+      message: `Are you sure you want to publish the new job opening "${newJobTitle.trim()}" in ${newJobDept.trim() || "Technology"}?`,
+      actionType: "create",
+      confirmLabel: "Yes, Publish Job",
+      onConfirm: () => {
+        const item: JobItem = {
+          id: `job-${Date.now()}`,
+          externalRef:
+            newJobTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
+            `job-${Date.now()}`,
+          title: newJobTitle.trim(),
+          department: newJobDept.trim() || "Technology",
+          location: newJobLoc.trim() || "Remote",
+          experience: newJobExp.trim() || undefined,
+          keywords: newJobKeywords.trim() || undefined,
+          publishedChannels: newJobChannels.length > 0 ? newJobChannels : ["Brutallyhired Portal"],
+          workplaceType: newJobWorkplace,
+          status: "OPEN",
+          description: newJobDesc.trim(),
+          applicantCount: 0,
+        };
 
-    const updated = [item, ...jobs];
-    setJobs(updated);
-    localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
+        const updated = [item, ...jobs];
+        setJobs(updated);
+        localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
 
-    setNewJobOpen(false);
-    setNewJobTitle("");
-    setNewJobDept("");
-    setNewJobLoc("");
-    setNewJobExp("");
-    setNewJobKeywords("");
-    setNewJobChannels(["Brutallyhired Portal", "LinkedIn", "Indeed"]);
-    setNewJobWorkplace("HYBRID");
-    setNewJobDesc("");
-    setGenerateError("");
+        setNewJobOpen(false);
+        setNewJobTitle("");
+        setNewJobDept("");
+        setNewJobLoc("");
+        setNewJobExp("");
+        setNewJobKeywords("");
+        setNewJobChannels(["Brutallyhired Portal", "LinkedIn", "Indeed"]);
+        setNewJobWorkplace("HYBRID");
+        setNewJobDesc("");
+        setGenerateError("");
+        showFeedback(`Job opening "${item.title}" published successfully.`);
+      },
+    });
   };
 
-  const handleDeleteJob = (jobId: string) => {
-    const updated = jobs.filter((j) => j.id !== jobId);
-    setJobs(updated);
-    localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
+  const handleOpenEditJob = (job: JobItem) => {
+    setEditingJob(job);
+    setEditJobTitle(job.title);
+    setEditJobDept(job.department || "Technology");
+    setEditJobLoc(job.location || "Remote");
+    setEditJobWorkplace(job.workplaceType || "HYBRID");
+    setEditJobExp(job.experience || "");
+    setEditJobStatus(job.status || "OPEN");
+    setEditJobDesc(job.description || "");
+  };
+
+  const handleSaveEditJob = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingJob || !editJobTitle.trim()) return;
+
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Update Job Opening",
+      message: `Are you sure you want to save changes to the job opening "${editJobTitle.trim()}"?`,
+      actionType: "update",
+      confirmLabel: "Yes, Save Changes",
+      onConfirm: () => {
+        const updated = jobs.map((j) =>
+          j.id === editingJob.id
+            ? {
+                ...j,
+                title: editJobTitle.trim(),
+                department: editJobDept.trim(),
+                location: editJobLoc.trim(),
+                workplaceType: editJobWorkplace,
+                experience: editJobExp.trim() || undefined,
+                status: editJobStatus,
+                description: editJobDesc.trim(),
+              }
+            : j
+        );
+        setJobs(updated);
+        localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
+        if (viewJobModal?.id === editingJob.id) {
+          setViewJobModal(updated.find((j) => j.id === editingJob.id) || null);
+        }
+        setEditingJob(null);
+        showFeedback(`Job opening "${editJobTitle.trim()}" updated.`);
+      },
+    });
+  };
+
+  const requestDeleteJob = (job: JobItem) => {
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Delete Job Opening",
+      message: `Are you sure you want to permanently delete job opening "${job.title}"? All associated requisitions and applicant references will be removed.`,
+      actionType: "delete",
+      confirmLabel: "Yes, Delete Job",
+      onConfirm: () => {
+        const updated = jobs.filter((j) => j.id !== job.id);
+        setJobs(updated);
+        localStorage.setItem("bh_admin_jobs", JSON.stringify(updated));
+        if (viewJobModal?.id === job.id) setViewJobModal(null);
+        showFeedback(`Job opening "${job.title}" deleted.`);
+      },
+    });
+  };
+
+  // --- CANDIDATE CRUD WITH PERMISSION CONFIRMATION ---
+  const handleAddCandidate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!candName.trim() || !candEmail.trim()) return;
+    const targetJob = candJob.trim() || jobs[0]?.title || "Full Stack Developer";
+
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Add Candidate",
+      message: `Are you sure you want to add candidate "${candName.trim()}" for applied position "${targetJob}"?`,
+      actionType: "create",
+      confirmLabel: "Yes, Add Candidate",
+      onConfirm: () => {
+        const newApp: ApplicationItem = {
+          id: `app-${Date.now()}`,
+          candidateName: candName.trim(),
+          email: candEmail.trim().toLowerCase(),
+          phone: candPhone.trim() || "+91 9876543210",
+          city: candCity.trim() || "Visakhapatnam",
+          jobTitle: targetJob,
+          stage: candStage,
+          score: candScore,
+          hardScore: Math.round(candScore * 0.9),
+          preferredScore: candScore,
+          experience: candExp,
+          submittedAt: "Just now",
+          currentCtc: "₹ 12.0 LPA",
+          expectedCtc: "₹ 18.0 LPA",
+          noticePeriod: "30 Days",
+          locationComfort: "Comfortable with Hybrid",
+          resumeName: `${candName.trim().replace(/\s+/g, "_")}_Resume.pdf`,
+        };
+        const updated = [newApp, ...applications];
+        setApplications(updated);
+        localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+        setAddCandOpen(false);
+        setCandName("");
+        setCandEmail("");
+        setCandPhone("");
+        setCandCity("");
+        showFeedback(`Candidate "${newApp.candidateName}" added successfully.`);
+      },
+    });
+  };
+
+  const handleOpenEditCandidate = (app: ApplicationItem) => {
+    setEditingCandidate(app);
+    setEditCandName(app.candidateName || "");
+    setEditCandEmail(app.email || "");
+    setEditCandPhone(app.phone || "");
+    setEditCandCity(app.city || "");
+    setEditCandJob(app.jobTitle || "");
+    setEditCandStage(app.stage || "SUBMITTED");
+    setEditCandExp(app.experience || "");
+    setEditCandScore(app.score || 85);
+  };
+
+  const handleSaveEditCandidate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCandidate || !editCandName.trim()) return;
+
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Update Candidate",
+      message: `Are you sure you want to save updates to candidate "${editCandName.trim()}"?`,
+      actionType: "update",
+      confirmLabel: "Yes, Save Changes",
+      onConfirm: () => {
+        const updated = applications.map((a) =>
+          a.id === editingCandidate.id
+            ? {
+                ...a,
+                candidateName: editCandName.trim(),
+                email: editCandEmail.trim().toLowerCase(),
+                phone: editCandPhone.trim(),
+                city: editCandCity.trim(),
+                jobTitle: editCandJob.trim(),
+                stage: editCandStage,
+                experience: editCandExp.trim(),
+                score: editCandScore,
+              }
+            : a
+        );
+        setApplications(updated);
+        localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+        if (activeReviewApp?.id === editingCandidate.id) {
+          setActiveReviewApp(updated.find((a) => a.id === editingCandidate.id) || null);
+        }
+        setEditingCandidate(null);
+        showFeedback(`Candidate "${editCandName.trim()}" updated successfully.`);
+      },
+    });
+  };
+
+  const requestDeleteCandidate = (app: ApplicationItem) => {
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Delete Candidate",
+      message: `Are you sure you want to permanently delete candidate "${app.candidateName || app.email}"? This application will be removed.`,
+      actionType: "delete",
+      confirmLabel: "Yes, Delete Candidate",
+      onConfirm: () => {
+        const updated = applications.filter((a) => a.id !== app.id);
+        setApplications(updated);
+        localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+        if (activeReviewApp?.id === app.id) {
+          setActiveReviewApp(null);
+        }
+        showFeedback(`Candidate "${app.candidateName || app.email}" deleted.`);
+      },
+    });
+  };
+
+  // --- TEAM (STAFF) CRUD WITH PERMISSION CONFIRMATION ---
+  const handleAddStaff = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffName.trim() || !staffEmail.trim()) return;
+
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Add Team Member",
+      message: `Are you sure you want to add "${staffName.trim()}" (${staffRole}) to the hiring team?`,
+      actionType: "create",
+      confirmLabel: "Yes, Add Member",
+      onConfirm: () => {
+        const newMember: StaffItem = {
+          id: `st-${Date.now()}`,
+          name: staffName.trim(),
+          email: staffEmail.trim().toLowerCase(),
+          role: staffRole,
+          title: staffTitle.trim() || (staffRole === "ADMIN" ? "Administrator" : staffRole === "RECRUITER" ? "Talent Partner" : "Technical Interviewer"),
+        };
+        const updated = [...staff, newMember];
+        setStaff(updated);
+        localStorage.setItem("bh_admin_staff", JSON.stringify(updated));
+        setInviteStaffOpen(false);
+        setStaffName("");
+        setStaffEmail("");
+        setStaffTitle("");
+        showFeedback(`Team member "${newMember.name}" added successfully.`);
+      },
+    });
+  };
+
+  const handleOpenEditStaff = (member: StaffItem) => {
+    setEditingStaff(member);
+    setEditStaffName(member.name);
+    setEditStaffEmail(member.email);
+    setEditStaffRole(member.role);
+    setEditStaffTitle(member.title);
+  };
+
+  const handleSaveEditStaff = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStaff || !editStaffName.trim() || !editStaffEmail.trim()) return;
+
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Update Team Member",
+      message: `Are you sure you want to save changes to team member "${editStaffName.trim()}"?`,
+      actionType: "update",
+      confirmLabel: "Yes, Save Changes",
+      onConfirm: () => {
+        const updated = staff.map((s) =>
+          s.id === editingStaff.id
+            ? {
+                ...s,
+                name: editStaffName.trim(),
+                email: editStaffEmail.trim().toLowerCase(),
+                role: editStaffRole,
+                title: editStaffTitle.trim(),
+              }
+            : s
+        );
+        setStaff(updated);
+        localStorage.setItem("bh_admin_staff", JSON.stringify(updated));
+        setEditingStaff(null);
+        showFeedback(`Team member "${editStaffName.trim()}" updated.`);
+      },
+    });
+  };
+
+  const requestDeleteStaff = (member: StaffItem) => {
+    setConfirmDialog({
+      open: true,
+      title: "Confirm Remove Team Member",
+      message: `Are you sure you want to remove team member "${member.name}" (${member.role}) from the hiring team?`,
+      actionType: "delete",
+      confirmLabel: "Yes, Remove Member",
+      onConfirm: () => {
+        const updated = staff.filter((s) => s.id !== member.id);
+        setStaff(updated);
+        localStorage.setItem("bh_admin_staff", JSON.stringify(updated));
+        showFeedback(`Team member "${member.name}" removed.`);
+      },
+    });
   };
 
   const handleSaveSettings = (e: React.FormEvent) => {
@@ -1716,6 +2049,9 @@ export function AdminDashboard() {
                 <span className="rounded-xl border border-line bg-white px-3.5 py-1.5 text-xs font-semibold text-ink shadow-sm">
                   Total Applicants: <strong className="text-brand">{applications.length}</strong>
                 </span>
+                <Button icon={<Plus size={16} />} onClick={() => setAddCandOpen(true)}>
+                  Add Candidate
+                </Button>
               </div>
             </div>
 
@@ -1951,6 +2287,22 @@ export function AdminDashboard() {
                               >
                                 Review Details →
                               </Button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditCandidate(app)}
+                                className="rounded-lg bg-canvas hover:bg-line border border-line text-ink-2 p-1.5 transition-colors"
+                                title="Edit candidate details"
+                              >
+                                <Settings size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => requestDeleteCandidate(app)}
+                                className="rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 p-1.5 transition-colors"
+                                title="Delete candidate"
+                              >
+                                <Trash size={13} />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2017,11 +2369,11 @@ export function AdminDashboard() {
                           <Pill tone={j.status === "OPEN" ? "teal" : "gray"}>{j.status}</Pill>
                           <button
                             type="button"
-                            onClick={() => handleDeleteJob(j.id)}
+                            onClick={() => requestDeleteJob(j)}
                             title="Delete opening"
                             className="text-ink-muted hover:text-rose-600 p-1 transition-colors"
                           >
-                            <X size={14} />
+                            <Trash size={14} />
                           </button>
                         </div>
                       </div>
@@ -2044,6 +2396,16 @@ export function AdminDashboard() {
                         >
                           <Eye size={13} />
                           <span>View</span>
+                        </button>
+                        <span className="text-line-2">•</span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditJob(j)}
+                          className="flex items-center gap-1 font-semibold text-ink-2 hover:text-brand transition-colors"
+                          title="Edit job opening details"
+                        >
+                          <Settings size={13} />
+                          <span>Edit</span>
                         </button>
                         <span className="text-line-2">•</span>
                         <button
@@ -2588,7 +2950,8 @@ export function AdminDashboard() {
                     <th className="pb-3 pl-2">Name</th>
                     <th className="pb-3">Title</th>
                     <th className="pb-3">Role</th>
-                    <th className="pb-3 pr-2 text-right">Status</th>
+                    <th className="pb-3 text-right">Status</th>
+                    <th className="pb-3 pr-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/60">
@@ -2607,7 +2970,28 @@ export function AdminDashboard() {
                           {s.role}
                         </Pill>
                       </td>
-                      <td className="py-3 pr-2 text-right text-xs font-semibold text-ok">Active</td>
+                      <td className="py-3 text-right text-xs font-semibold text-ok">Active</td>
+                      <td className="py-3 pr-2 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditStaff(s)}
+                            className="rounded-lg bg-canvas hover:bg-line border border-line text-ink-2 px-2.5 py-1 text-xs font-semibold transition-colors flex items-center gap-1"
+                            title="Edit team member"
+                          >
+                            <Settings size={12} />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => requestDeleteStaff(s)}
+                            className="rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 p-1.5 transition-colors"
+                            title="Remove team member"
+                          >
+                            <Trash size={12} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -2739,387 +3123,6 @@ export function AdminDashboard() {
                 <span>View</span>
               </button>
             </div>
-
-            {/* Candidate Screening Questions Responses */}
-            <div className="rounded-xl border border-line bg-canvas/40 p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">
-                  Screening Questions Responses
-                </span>
-                <span className="rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[10px] font-medium">
-                  Verified Candidate Responses
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-lg bg-white border border-line">
-                  <span className="text-[10px] text-ink-muted block uppercase font-medium">Current CTC</span>
-                  <strong className="text-ink text-xs block mt-0.5">{activeReviewApp.currentCtc || "₹ 12.0 LPA"}</strong>
-                </div>
-                <div className="p-2.5 rounded-lg bg-white border border-line">
-                  <span className="text-[10px] text-ink-muted block uppercase font-medium">Expected CTC</span>
-                  <strong className="text-ink text-xs block mt-0.5">{activeReviewApp.expectedCtc || "₹ 18.0 LPA"}</strong>
-                </div>
-                <div className="p-2.5 rounded-lg bg-white border border-line">
-                  <span className="text-[10px] text-ink-muted block uppercase font-medium">Official Notice Period</span>
-                  <strong className="text-ink text-xs block mt-0.5">{activeReviewApp.noticePeriod || "30 Days (Immediate Joiner)"}</strong>
-                </div>
-                <div className="p-2.5 rounded-lg bg-white border border-line">
-                  <span className="text-[10px] text-ink-muted block uppercase font-medium">Work Location Comfort</span>
-                  <strong className="text-ink text-xs block mt-0.5">{activeReviewApp.locationComfort || "Comfortable with Hybrid / On-site"}</strong>
-                </div>
-                <div className="col-span-2 p-2.5 rounded-lg bg-white border border-line">
-                  <span className="text-[10px] text-ink-muted block uppercase font-medium">Total Relevant Experience</span>
-                  <strong className="text-ink text-xs block mt-0.5">{activeReviewApp.experience || "3+ years"} relevant industry experience</strong>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Screening Summary */}
-            {activeReviewApp.notes && (
-              <div className="rounded-xl border border-ok/20 bg-ok-soft/30 p-3.5 space-y-1.5">
-                <div className="flex items-center gap-1.5 font-bold text-ink">
-                  <Sparkle size={14} className="text-brand" />
-                  <span>Automated AI Screening Summary</span>
-                </div>
-                <p className="leading-relaxed text-ink-2">{activeReviewApp.notes}</p>
-                <div className="mt-1 flex items-center gap-4 text-[11px] text-ink-muted border-t border-ok/10 pt-1.5">
-                  <span>Hard criteria match: <strong className="text-ink">{activeReviewApp.hardScore ?? 48} pts</strong></span>
-                  <span>Preferred criteria match: <strong className="text-ink">{activeReviewApp.preferredScore ?? 38} pts</strong></span>
-                </div>
-              </div>
-            )}
-
-            {/* Recruiter Hiring Notes */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted block">
-                Recruiter Evaluation Notes
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Add hiring team feedback or evaluation notes for this candidate..."
-                value={stageNote}
-                onChange={(e) => setStageNote(e.target.value)}
-                className="w-full rounded-xl border border-line bg-canvas p-2.5 text-xs text-ink focus:border-brand focus:outline-none"
-              />
-            </div>
-
-            {/* BrutalEngine™ Score Policy & Screening Review (Diagram 1) */}
-            <div className="rounded-xl border border-line bg-canvas p-3.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-ink uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <Sparkle size={14} className="text-brand" />
-                  <span>BrutalEngine™ Score Policy Check</span>
-                </span>
-                <span className="text-[11px] text-ink-muted">Cutoff Threshold: {threshold}/100</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {activeReviewApp.score >= threshold ? (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
-                    ✓ Meets Score Policy ({activeReviewApp.score} ≥ {threshold})
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-800">
-                    ⚠️ Below Score Cutoff ({activeReviewApp.score} &lt; {threshold}) — Requires HR override or Reject
-                  </span>
-                )}
-                <span className="text-xs text-ink-muted">• 3-Day Screening Window Active</span>
-              </div>
-            </div>
-
-            {/* Terminal Status Banner (If Rejected or On Hold) */}
-            {activeReviewApp.stage === "REJECTED" && (
-              <div className="rounded-xl border border-rose-300 bg-rose-50 p-3.5 space-y-2 text-rose-900">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs flex items-center gap-1.5">
-                    <Alert size={14} className="text-rose-600" />
-                    <span>Candidate Rejected (Terminal State)</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleRestoreCandidate}
-                    className="text-xs font-semibold text-rose-800 underline hover:text-rose-950"
-                  >
-                    Restore Candidate to Pipeline
-                  </button>
-                </div>
-                <p className="text-xs font-medium">
-                  <strong>Rejection Reason:</strong> {activeReviewApp.rejectionReason || "Score below policy / HR decision"}
-                </p>
-              </div>
-            )}
-
-            {activeReviewApp.stage === "ON_HOLD" && (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 space-y-2 text-amber-900">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs flex items-center gap-1.5">
-                    <Clock size={14} className="text-amber-600" />
-                    <span>Candidate Placed On Hold</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleRestoreCandidate}
-                    className="text-xs font-semibold text-amber-800 underline hover:text-amber-950"
-                  >
-                    Restore Candidate to Pipeline
-                  </button>
-                </div>
-                <p className="text-xs font-medium">
-                  <strong>Hold Reason:</strong> {activeReviewApp.holdReason || "Awaiting screening responses / batch hold"}
-                </p>
-              </div>
-            )}
-
-            {/* AI Tailored Assessment & Exam Link Generation Card */}
-            <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/70 via-white to-blue-50/50 p-4 space-y-3 shadow-xs">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs">
-                    <Sparkle size={16} />
-                  </span>
-                  <div>
-                    <h4 className="text-xs font-bold text-ink">AI Tailored Assessment Generator (Qwen 3.5:9b)</h4>
-                    <p className="text-[11px] text-ink-muted">
-                      MCQ examination generated specifically for {activeReviewApp.candidateName || "candidate"} from job description & verified CV skills.
-                    </p>
-                  </div>
-                </div>
-                <span className="rounded-full bg-indigo-100 text-indigo-800 px-2.5 py-0.5 text-[10px] font-bold">
-                  {activeReviewApp.stage === "ASSESSMENT" ? "EXAM LINK ACTIVE" : "READY FOR HR APPROVAL"}
-                </span>
-              </div>
-
-              {/* Assessment Specs */}
-              <div className="flex flex-wrap gap-1.5 text-[11px]">
-                <span className="rounded-md bg-white border border-indigo-100 px-2 py-0.5 font-medium text-ink-2">
-                  Role: <strong>{activeReviewApp.jobTitle}</strong>
-                </span>
-                {activeReviewApp.experience && (
-                  <span className="rounded-md bg-white border border-indigo-100 px-2 py-0.5 font-medium text-ink-2">
-                    Experience: <strong>{activeReviewApp.experience}</strong>
-                  </span>
-                )}
-                <span className="rounded-md bg-white border border-indigo-100 px-2 py-0.5 font-medium text-ink-2">
-                  Deadline: <strong>72 Hours (3 Days)</strong>
-                </span>
-                <span className="rounded-md bg-white border border-indigo-100 px-2 py-0.5 font-medium text-ink-2">
-                  Proctoring: <strong>AI Webcam & Screen Verification</strong>
-                </span>
-              </div>
-
-              {/* Action Button & Link Display */}
-              <div className="pt-1">
-                {candidateAiExamUrl ? (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-emerald-900">
-                      <span className="flex items-center gap-1.5">
-                        <Check size={14} className="text-emerald-600" />
-                        <span>✓ Assessment Approved & Exam Link Emailed to Candidate!</span>
-                      </span>
-                      <span className="text-[11px] font-medium text-emerald-700">Sent to {activeReviewApp.email}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={candidateAiExamUrl}
-                        className="flex-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs text-ink select-all font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(candidateAiExamUrl);
-                          setCopiedExamLink(true);
-                          setTimeout(() => setCopiedExamLink(false), 2000);
-                        }}
-                        className="rounded-md bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-3 py-1 transition-colors cursor-pointer"
-                      >
-                        {copiedExamLink ? "Copied! ✓" : "Copy Link"}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={aiAssessmentGenerating}
-                    onClick={() => handleApproveAndSendAiAssessment(activeReviewApp)}
-                    className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-brand hover:from-indigo-700 hover:to-brand/90 text-white font-bold py-2.5 px-4 text-xs shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-                  >
-                    {aiAssessmentGenerating ? (
-                      <>
-                        <Spinner size={14} />
-                        <span>Generating Tailored MCQs with Qwen & Dispatching Email...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkle size={15} />
-                        <span>⚡ Approve & Generate AI Assessment Exam Link for Candidate</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Stage Progression Pipeline (Diagram 1) */}
-            <div className="border-t border-line pt-4 space-y-2">
-              <span className="font-bold text-ink uppercase tracking-wider text-[11px] block">
-                Progress Candidate Lifecycle Stage
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { target: "SUBMITTED", label: "Submitted" },
-                  { target: "IN_REVIEW", label: "Under Review (3-day deadline)" },
-                  { target: "SHORTLISTED", label: "Shortlisted" },
-                  { target: "ASSESSMENT", label: "Assessment (BrutalAssessAI™)" },
-                  { target: "INTERVIEW", label: "LiveKit Interview" },
-                  { target: "OFFER", label: "Offer" },
-                  { target: "ONBOARDING", label: "Onboarding" },
-                  { target: "HIRED", label: "Hired" },
-                ].map((s) => (
-                  <button
-                    key={s.target}
-                    type="button"
-                    disabled={activeReviewApp.stage === s.target}
-                    onClick={() => handleStageAdvance(s.target)}
-                    className={`rounded-lg px-3 py-1.5 font-semibold transition-all ${
-                      activeReviewApp.stage === s.target
-                        ? "bg-brand text-white shadow-sm ring-1 ring-brand cursor-default"
-                        : "border border-line-2 bg-white text-ink-2 hover:bg-canvas"
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Direct Action Hub for Interviews & Offers */}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScheduleTargetApp(activeReviewApp);
-                    setScheduleModalOpen(true);
-                  }}
-                  className="rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 font-bold px-3 py-1.5 text-xs transition-colors flex items-center gap-1.5"
-                >
-                  <span>📅</span> Schedule Interview Round
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOfferApp(activeReviewApp);
-                    setOfferModalOpen(true);
-                  }}
-                  className="rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 font-bold px-3 py-1.5 text-xs transition-colors flex items-center gap-1.5"
-                >
-                  <span>📜</span> Prepare & Issue Formal Offer
-                </button>
-              </div>
-            </div>
-
-            {/* Real-time Email Notification & Portal Link Banner */}
-            {(emailNotice || ["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(activeReviewApp.stage)) && (
-              <div className="rounded-xl border border-teal-200 bg-teal-50/80 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-teal-900 text-xs flex items-center gap-1.5">
-                    <span className="text-base">✉️</span>
-                    <span>
-                      {emailNotice ? "Real-time Email Dispatched" : "Milestone Email Active"} to{" "}
-                      <strong>{emailNotice?.recipient || activeReviewApp.email}</strong>
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sent: SentEmailRecord = getSentEmails().find((e) => e.recipient === activeReviewApp.email) || {
-                        id: `email-${activeReviewApp.id}`,
-                        recipient: activeReviewApp.email,
-                        recipientName: activeReviewApp.candidateName || "Candidate",
-                        subject: `Assessment ready — ${activeReviewApp.jobTitle}`,
-                        heading: `Congratulations ${activeReviewApp.candidateName || "Candidate"}, you've been shortlisted!`,
-                        body: `We are impressed by your background and are pleased to invite you to the next stage for the ${activeReviewApp.jobTitle} opening at Brutallyhired. Please complete your proctored assessment before the deadline. It takes 45 minutes once you begin.`,
-                        portalUrl: `${window.location.origin}/${tenant.slug}/applications/${activeReviewApp.id}/assessments`,
-                        stage: activeReviewApp.stage as any,
-                        sentAt: "Today",
-                        status: "DELIVERED" as const,
-                      };
-                      setPreviewEmailModal(sent);
-                    }}
-                    className="text-xs font-bold text-teal-800 underline hover:text-teal-950 flex items-center gap-1"
-                  >
-                    <span>Inspect Sent Email</span> ↗
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-teal-200/60">
-                  <div className="text-[11px] text-teal-900">
-                    <span className="font-semibold">Candidate Portal Link: </span>
-                    <span className="font-mono text-teal-800">
-                      {window.location.origin}/{tenant.slug}/applications/{activeReviewApp.id}/
-                      {activeReviewApp.stage === "INTERVIEW"
-                        ? "interviews"
-                        : activeReviewApp.stage === "OFFER"
-                        ? "offer"
-                        : activeReviewApp.stage === "HIRED"
-                        ? "onboarding"
-                        : "assessments"}
-                    </span>
-                  </div>
-                  <a
-                    href={`${window.location.origin}/${tenant.slug}/applications/${activeReviewApp.id}/${
-                      activeReviewApp.stage === "INTERVIEW"
-                        ? "interviews"
-                        : activeReviewApp.stage === "OFFER"
-                        ? "offer"
-                        : activeReviewApp.stage === "HIRED"
-                        ? "onboarding"
-                        : "assessments"
-                    }`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-[11px] font-bold px-3 py-1.5 transition-colors no-underline inline-flex items-center gap-1 shadow-xs"
-                  >
-                    <span>Open Candidate View</span> ↗
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {/* Negative / Hold Decisions (With Recorded Reason) */}
-            <div className="rounded-xl border border-line bg-canvas/60 p-3.5 space-y-2.5">
-              <span className="font-bold text-ink uppercase tracking-wider text-[11px] block">
-                Negative / Hold Decisions (With Recorded Reason)
-              </span>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRejectActionType("REJECTED");
-                    setSelectedRejectReason(REJECTION_REASONS[0]?.label || "Score below policy");
-                    setRejectModalOpen(true);
-                  }}
-                  className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold px-3.5 py-1.5 transition-colors shadow-xs"
-                >
-                  Reject Candidate + Reason
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRejectActionType("ON_HOLD");
-                    setSelectedRejectReason(HOLD_REASONS[0]?.label || "Under review");
-                    setRejectModalOpen(true);
-                  }}
-                  className="rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold px-3.5 py-1.5 transition-colors"
-                >
-                  Place On Hold + Reason
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end border-t border-line pt-3">
-              <Button variant="ghost" onClick={() => setActiveReviewApp(null)}>
-                Close
-              </Button>
-            </div>
           </div>
         )}
       </Modal>
@@ -3138,13 +3141,11 @@ export function AdminDashboard() {
           return (
             <div className="space-y-4">
               {/* The Uploaded Resume Display - Authentic Document Only */}
-              <div className="w-full h-[72vh] min-h-[550px] rounded-xl overflow-hidden border border-line bg-slate-100 shadow-inner">
-                <iframe
-                  src={resumeUrl}
-                  title={resumeFileName}
-                  className="w-full h-full border-0 bg-white"
-                />
-              </div>
+              <ResumeDocViewer
+                url={resumeUrl}
+                filename={resumeFileName}
+                className="w-full h-[72vh] min-h-[550px]"
+              />
 
               {/* Footer with ONLY Download button and Close button */}
               <div className="flex items-center justify-between border-t border-line pt-3">
@@ -3264,16 +3265,23 @@ export function AdminDashboard() {
 
             {/* Modal Actions */}
             <div className="flex items-center justify-between border-t border-line pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  handleDeleteJob(viewJobModal.id);
-                  setViewJobModal(null);
-                }}
-                className="text-xs font-semibold text-rose-600 hover:underline"
-              >
-                Delete Opening
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => requestDeleteJob(viewJobModal)}
+                  className="text-xs font-semibold text-rose-600 hover:underline"
+                >
+                  Delete Opening
+                </button>
+                <span className="text-line-2">•</span>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditJob(viewJobModal)}
+                  className="text-xs font-semibold text-brand hover:underline"
+                >
+                  Edit Opening
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <Button variant="ghost" onClick={() => setViewJobModal(null)}>
                   Close
@@ -3796,43 +3804,432 @@ export function AdminDashboard() {
         )}
       </Modal>
 
-      {/* MODAL: Invite Staff */}
+      {/* MODAL: Invite / Add Staff Member */}
       <Modal
         open={inviteStaffOpen}
         onClose={() => setInviteStaffOpen(false)}
-        title="Invite Hiring Team Member"
+        title="Add Team Member"
+        subtitle="Add a new recruiter, administrator, or technical interviewer to the hiring team"
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setInviteStaffOpen(false);
-          }}
-          className="space-y-4"
-        >
+        <form onSubmit={handleAddStaff} className="space-y-4">
+          <Field label="Full Name">
+            <Input
+              placeholder="e.g. Priya Sharma"
+              value={staffName}
+              onChange={(e) => setStaffName(e.target.value)}
+              required
+            />
+          </Field>
           <Field label="Email Address">
             <Input
               type="email"
-              placeholder="recruiter@company.com"
+              placeholder="priya.recruiter@company.com"
               value={staffEmail}
               onChange={(e) => setStaffEmail(e.target.value)}
               required
             />
           </Field>
-          <Field label="Role">
-            <Select value={staffRole} onChange={(e) => setStaffRole(e.target.value as any)}>
-              <option value="RECRUITER">Recruiter</option>
-              <option value="INTERVIEWER">Interviewer</option>
-              <option value="ADMIN">Admin</option>
-            </Select>
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Role">
+              <Select value={staffRole} onChange={(e) => setStaffRole(e.target.value as any)}>
+                <option value="RECRUITER">Recruiter</option>
+                <option value="INTERVIEWER">Interviewer</option>
+                <option value="ADMIN">Admin</option>
+              </Select>
+            </Field>
+            <Field label="Title / Designation">
+              <Input
+                placeholder="e.g. Senior Tech Recruiter"
+                value={staffTitle}
+                onChange={(e) => setStaffTitle(e.target.value)}
+              />
+            </Field>
+          </div>
           <div className="flex justify-end gap-2 border-t border-line pt-3">
-            <Button variant="ghost" onClick={() => setInviteStaffOpen(false)}>
+            <Button variant="ghost" type="button" onClick={() => setInviteStaffOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Send Invite</Button>
+            <Button type="submit">Add Member</Button>
           </div>
         </form>
       </Modal>
+
+      {/* MODAL: Edit Team Member */}
+      <Modal
+        open={Boolean(editingStaff)}
+        onClose={() => setEditingStaff(null)}
+        title="Edit Team Member"
+        subtitle={editingStaff ? `Editing ${editingStaff.name}` : ""}
+      >
+        {editingStaff && (
+          <form onSubmit={handleSaveEditStaff} className="space-y-4">
+            <Field label="Full Name">
+              <Input
+                value={editStaffName}
+                onChange={(e) => setEditStaffName(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Email Address">
+              <Input
+                type="email"
+                value={editStaffEmail}
+                onChange={(e) => setEditStaffEmail(e.target.value)}
+                required
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Role">
+                <Select value={editStaffRole} onChange={(e) => setEditStaffRole(e.target.value as any)}>
+                  <option value="RECRUITER">Recruiter</option>
+                  <option value="INTERVIEWER">Interviewer</option>
+                  <option value="ADMIN">Admin</option>
+                </Select>
+              </Field>
+              <Field label="Title / Designation">
+                <Input
+                  value={editStaffTitle}
+                  onChange={(e) => setEditStaffTitle(e.target.value)}
+                  required
+                />
+              </Field>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-line pt-3">
+              <Button variant="ghost" type="button" onClick={() => setEditingStaff(null)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save Changes</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: Add New Candidate */}
+      <Modal
+        open={addCandOpen}
+        onClose={() => setAddCandOpen(false)}
+        title="Add New Candidate Application"
+        subtitle="Create an applicant profile and add them to the hiring pipeline"
+      >
+        <form onSubmit={handleAddCandidate} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Candidate Full Name">
+              <Input
+                placeholder="e.g. Rahul Verma"
+                value={candName}
+                onChange={(e) => setCandName(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Email Address">
+              <Input
+                type="email"
+                placeholder="e.g. rahul.verma@example.com"
+                value={candEmail}
+                onChange={(e) => setCandEmail(e.target.value)}
+                required
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Phone Number">
+              <Input
+                placeholder="e.g. +91 9876543210"
+                value={candPhone}
+                onChange={(e) => setCandPhone(e.target.value)}
+              />
+            </Field>
+            <Field label="City / Location">
+              <Input
+                placeholder="e.g. Visakhapatnam, Hyderabad, Remote"
+                value={candCity}
+                onChange={(e) => setCandCity(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Applied Job Requisition">
+              <Select value={candJob || jobs[0]?.title} onChange={(e) => setCandJob(e.target.value)}>
+                {jobs.map((j) => (
+                  <option key={j.id} value={j.title}>
+                    {j.title} ({j.department})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Initial Pipeline Stage">
+              <Select value={candStage} onChange={(e) => setCandStage(e.target.value)}>
+                <option value="SUBMITTED">Submitted</option>
+                <option value="IN_REVIEW">In Review</option>
+                <option value="SHORTLISTED">Shortlisted</option>
+                <option value="ASSESSMENT">Screening Test / Assessment</option>
+                <option value="INTERVIEW">Interview Schedule</option>
+                <option value="OFFER">Offer</option>
+                <option value="HIRED">Onboarding / Hired</option>
+              </Select>
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Work Experience">
+              <Select value={candExp} onChange={(e) => setCandExp(e.target.value)}>
+                <option value="Less than 2 years">Less than 2 years</option>
+                <option value="2-4 years">2-4 years</option>
+                <option value="5-8 years">5-8 years</option>
+                <option value="8+ years">8+ years</option>
+              </Select>
+            </Field>
+            <Field label="Match Score (0-100)">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={candScore}
+                onChange={(e) => setCandScore(Number(e.target.value) || 0)}
+              />
+            </Field>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-line pt-3">
+            <Button variant="ghost" type="button" onClick={() => setAddCandOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">Create Candidate</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: Edit Candidate Details */}
+      <Modal
+        open={Boolean(editingCandidate)}
+        onClose={() => setEditingCandidate(null)}
+        title="Edit Candidate Application"
+        subtitle={editingCandidate ? `Editing ${editingCandidate.candidateName || editingCandidate.email}` : ""}
+      >
+        {editingCandidate && (
+          <form onSubmit={handleSaveEditCandidate} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Candidate Name">
+                <Input
+                  value={editCandName}
+                  onChange={(e) => setEditCandName(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Email Address">
+                <Input
+                  type="email"
+                  value={editCandEmail}
+                  onChange={(e) => setEditCandEmail(e.target.value)}
+                  required
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Phone Number">
+                <Input
+                  value={editCandPhone}
+                  onChange={(e) => setEditCandPhone(e.target.value)}
+                />
+              </Field>
+              <Field label="City">
+                <Input
+                  value={editCandCity}
+                  onChange={(e) => setEditCandCity(e.target.value)}
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Applied Job Title">
+                <Input
+                  value={editCandJob}
+                  onChange={(e) => setEditCandJob(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Current Pipeline Stage">
+                <Select value={editCandStage} onChange={(e) => setEditCandStage(e.target.value)}>
+                  <option value="SUBMITTED">Submitted</option>
+                  <option value="IN_REVIEW">In Review</option>
+                  <option value="SHORTLISTED">Shortlisted</option>
+                  <option value="ASSESSMENT">Screening Test / Assessment</option>
+                  <option value="INTERVIEW">Interview Schedule</option>
+                  <option value="OFFER">Offer</option>
+                  <option value="HIRED">Onboarding / Hired</option>
+                  <option value="ON_HOLD">On Hold</option>
+                  <option value="REJECTED">Rejected</option>
+                </Select>
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Total Experience">
+                <Input
+                  value={editCandExp}
+                  onChange={(e) => setEditCandExp(e.target.value)}
+                />
+              </Field>
+              <Field label="Match Score (0-100)">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={editCandScore}
+                  onChange={(e) => setEditCandScore(Number(e.target.value) || 0)}
+                />
+              </Field>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-line pt-3">
+              <Button variant="ghost" type="button" onClick={() => setEditingCandidate(null)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save Changes</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: Edit Job Opening */}
+      <Modal
+        open={Boolean(editingJob)}
+        onClose={() => setEditingJob(null)}
+        title="Edit Job Opening"
+        subtitle={editingJob ? `Editing ${editingJob.title}` : ""}
+      >
+        {editingJob && (
+          <form onSubmit={handleSaveEditJob} className="space-y-4">
+            <Field label="Job Title">
+              <Input
+                value={editJobTitle}
+                onChange={(e) => setEditJobTitle(e.target.value)}
+                required
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Department">
+                <Input
+                  value={editJobDept}
+                  onChange={(e) => setEditJobDept(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Location">
+                <Input
+                  value={editJobLoc}
+                  onChange={(e) => setEditJobLoc(e.target.value)}
+                  required
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Workplace Type">
+                <Select
+                  value={editJobWorkplace}
+                  onChange={(e) => setEditJobWorkplace(e.target.value as any)}
+                >
+                  <option value="HYBRID">Hybrid</option>
+                  <option value="REMOTE">Remote</option>
+                  <option value="ONSITE">Onsite</option>
+                </Select>
+              </Field>
+              <Field label="Experience">
+                <Input
+                  value={editJobExp}
+                  onChange={(e) => setEditJobExp(e.target.value)}
+                />
+              </Field>
+              <Field label="Status">
+                <Select
+                  value={editJobStatus}
+                  onChange={(e) => setEditJobStatus(e.target.value as any)}
+                >
+                  <option value="OPEN">Open</option>
+                  <option value="DRAFT">Draft</option>
+                  <option value="CLOSED">Closed</option>
+                </Select>
+              </Field>
+            </div>
+
+            <Field label="Job Description">
+              <Textarea
+                rows={6}
+                value={editJobDesc}
+                onChange={(e) => setEditJobDesc(e.target.value)}
+                required
+              />
+            </Field>
+
+            <div className="flex justify-end gap-2 border-t border-line pt-3">
+              <Button variant="ghost" type="button" onClick={() => setEditingJob(null)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save Changes</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* UNIVERSAL CONFIRMATION / PERMISSION DIALOG */}
+      <Modal
+        open={Boolean(confirmDialog?.open)}
+        onClose={() => setConfirmDialog(null)}
+        title={confirmDialog?.title || "Confirm Action"}
+        maxWidth="max-w-md"
+      >
+        {confirmDialog && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-xl border border-line bg-canvas p-4 text-xs">
+              <Alert
+                size={18}
+                className={
+                  confirmDialog.actionType === "delete"
+                    ? "text-rose-600 mt-0.5 shrink-0"
+                    : "text-brand mt-0.5 shrink-0"
+                }
+              />
+              <p className="text-ink leading-relaxed font-medium">
+                {confirmDialog.message}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 border-t border-line pt-3">
+              <Button variant="ghost" type="button" onClick={() => setConfirmDialog(null)}>
+                Cancel
+              </Button>
+              <button
+                type="button"
+                onClick={() => {
+                  const act = confirmDialog.onConfirm;
+                  setConfirmDialog(null);
+                  act();
+                }}
+                className={`rounded-xl px-4 py-2 text-xs font-bold transition-all shadow-sm cursor-pointer ${
+                  confirmDialog.actionType === "delete"
+                    ? "bg-rose-600 hover:bg-rose-700 text-white"
+                    : "bg-brand hover:opacity-90 text-brand-fg"
+                }`}
+              >
+                {confirmDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Floating Action Feedback Toast */}
+      {actionFeedback && (
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-2 rounded-xl bg-slate-900 text-white px-4 py-2.5 text-xs font-semibold shadow-lift animate-in fade-in slide-in-from-top-2">
+          <Check size={16} className="text-emerald-400" />
+          <span>{actionFeedback}</span>
+        </div>
+      )}
 
       {/* MODAL: Schedule Interview Round */}
       <Modal

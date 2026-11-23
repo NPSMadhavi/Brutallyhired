@@ -51,7 +51,18 @@ export const PROCTORING_EVENT_TYPES = [
 export type ProctoringEventType = (typeof PROCTORING_EVENT_TYPES)[number];
 
 /** Candidate-visible milestones. */
-export const MILESTONES = ["APPLIED", "IN_REVIEW", "ASSESSMENT", "INTERVIEWS", "OFFER", "ONBOARDING", "FIRST_DAY"] as const;
+export const MILESTONES = [
+  "APPLIED",
+  "IN_REVIEW",
+  "SCREENING_TEST",
+  "SHORTLISTED",
+  "INTERVIEW_SCHEDULE",
+  "ASSESSMENT",
+  "INTERVIEWS",
+  "OFFER",
+  "ONBOARDING",
+  "FIRST_DAY",
+] as const;
 export type MilestoneKey = (typeof MILESTONES)[number];
 
 /** Public event types; the client renders them through i18n. */

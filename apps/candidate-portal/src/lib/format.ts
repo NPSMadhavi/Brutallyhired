@@ -5,33 +5,85 @@ export const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().tim
 /** Locale-aware date helpers in the viewer's own time zone. */
 export function useFormat() {
   const { i18n } = useTranslation();
-  const locale = i18n.language;
-  const d = (v: string | Date) => (typeof v === "string" ? new Date(v) : v);
+  const locale = i18n.language || "en";
+
+  const parseDate = (v: string | Date | null | undefined): Date | null => {
+    if (!v) return null;
+    const d = typeof v === "string" ? new Date(v) : v;
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const safeFormat = (
+    v: string | Date | null | undefined,
+    options: Intl.DateTimeFormatOptions,
+    fallback = ""
+  ): string => {
+    if (!v) return fallback;
+    const d = parseDate(v);
+    if (!d) return typeof v === "string" ? v : fallback;
+    try {
+      return new Intl.DateTimeFormat(locale, options).format(d);
+    } catch {
+      return typeof v === "string" ? v : fallback;
+    }
+  };
+
   return {
-    date: (v: string | Date) => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(d(v)),
-    dayMonth: (v: string | Date) => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(d(v)),
-    longDate: (v: string | Date) => new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long" }).format(d(v)),
-    weekday: (v: string | Date) => new Intl.DateTimeFormat(locale, { weekday: "short" }).format(d(v)),
-    dayNum: (v: string | Date) => new Intl.DateTimeFormat(locale, { day: "numeric" }).format(d(v)),
-    month: (v: string | Date) => new Intl.DateTimeFormat(locale, { month: "short" }).format(d(v)),
-    time: (v: string | Date) => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(d(v)),
+    date: (v: string | Date) =>
+      safeFormat(v, { day: "numeric", month: "short", year: "numeric" }),
+    dayMonth: (v: string | Date) =>
+      safeFormat(v, { day: "numeric", month: "short" }),
+    longDate: (v: string | Date) =>
+      safeFormat(v, { weekday: "long", day: "numeric", month: "long" }),
+    weekday: (v: string | Date) =>
+      safeFormat(v, { weekday: "short" }),
+    dayNum: (v: string | Date) =>
+      safeFormat(v, { day: "numeric" }),
+    month: (v: string | Date) =>
+      safeFormat(v, { month: "short" }),
+    time: (v: string | Date) =>
+      safeFormat(v, { hour: "2-digit", minute: "2-digit" }),
     dateTime: (v: string | Date) =>
-      new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(d(v)),
+      safeFormat(v, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }),
     timeRange: (a: string | Date, b: string | Date) => {
-      const f = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
-      return `${f.format(d(a))}–${f.format(d(b))}`;
+      const da = parseDate(a);
+      const db = parseDate(b);
+      if (!da || !db) return `${a ?? ""}–${b ?? ""}`;
+      try {
+        const fmt = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+        return `${fmt.format(da)}–${fmt.format(db)}`;
+      } catch {
+        return `${a ?? ""}–${b ?? ""}`;
+      }
     },
     relative: (v: string | Date) => {
-      const diff = (d(v).getTime() - Date.now()) / 1000;
-      const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-      const abs = Math.abs(diff);
-      if (abs < 60) return rtf.format(Math.round(diff), "second");
-      if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute");
-      if (abs < 86400) return rtf.format(Math.round(diff / 3600), "hour");
-      if (abs < 86400 * 7) return rtf.format(Math.round(diff / 86400), "day");
-      return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(d(v));
+      const d = parseDate(v);
+      if (!d) return typeof v === "string" ? v : "";
+      try {
+        const diff = (d.getTime() - Date.now()) / 1000;
+        const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+        const abs = Math.abs(diff);
+        if (abs < 60) return rtf.format(Math.round(diff), "second");
+        if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute");
+        if (abs < 86400) return rtf.format(Math.round(diff / 3600), "hour");
+        if (abs < 86400 * 7) return rtf.format(Math.round(diff / 86400), "day");
+        return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(d);
+      } catch {
+        return typeof v === "string" ? v : "";
+      }
     },
-    daysUntil: (v: string | Date) => Math.max(0, Math.ceil((d(v).getTime() - Date.now()) / 86_400_000)),
+    daysUntil: (v: string | Date) => {
+      const d = parseDate(v);
+      if (!d) return 0;
+      return Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86_400_000));
+    },
     fileSize: (bytes: number) =>
       bytes < 1024 * 1024
         ? `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(bytes / 1024)} KB`

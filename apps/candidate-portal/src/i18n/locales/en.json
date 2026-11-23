@@ -290,11 +290,14 @@
   "milestone": {
     "APPLIED": "Applied",
     "IN_REVIEW": "In review",
-    "ASSESSMENT": "Assessment",
-    "INTERVIEWS": "Interviews",
+    "SCREENING_TEST": "Screening test",
+    "SHORTLISTED": "Shortlisted",
+    "INTERVIEW_SCHEDULE": "Interview schedule",
+    "ASSESSMENT": "Screening test",
+    "INTERVIEWS": "Interview schedule",
     "OFFER": "Offer",
     "ONBOARDING": "Onboarding",
-    "FIRST_DAY": "First day"
+    "FIRST_DAY": "Onboarding"
   },
   "applications": {
     "title": "My applications",

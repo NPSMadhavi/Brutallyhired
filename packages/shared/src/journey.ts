@@ -3,30 +3,38 @@ import type { ApplicationStageKey, MilestoneKey } from "./enums.js";
 export type MilestoneState = "done" | "current" | "upcoming";
 
 /** Which milestone a stage sits on. */
-export function milestoneForStage(stage: ApplicationStageKey): MilestoneKey | null {
-  switch (stage) {
+export function milestoneForStage(stage: ApplicationStageKey | string): MilestoneKey | null {
+  switch (stage as string) {
     case "SUBMITTED":
     case "IN_REVIEW":
       return "IN_REVIEW";
     case "ASSESSMENT":
-      return "ASSESSMENT";
+      return "SCREENING_TEST";
+    case "SHORTLISTED":
+      return "SHORTLISTED";
     case "INTERVIEW":
-      return "INTERVIEWS";
+      return "INTERVIEW_SCHEDULE";
     case "OFFER":
       return "OFFER";
     case "ONBOARDING":
-      return "ONBOARDING";
     case "HIRED":
-      return "FIRST_DAY";
+      return "ONBOARDING";
     default:
       return null;
   }
 }
 
-/** The milestone list for a job: the assessment step only appears when the job has one. */
-export function milestonesFor(hasAssessment: boolean): MilestoneKey[] {
-  const all: MilestoneKey[] = ["APPLIED", "IN_REVIEW", "ASSESSMENT", "INTERVIEWS", "OFFER", "ONBOARDING", "FIRST_DAY"];
-  return hasAssessment ? all : all.filter((m) => m !== "ASSESSMENT");
+/** The milestone list for a job: 1st applied, next in review, next screening test, next shortlisted, next interview schedule, next offer, next onboarding. */
+export function milestonesFor(_hasAssessment?: boolean): MilestoneKey[] {
+  return [
+    "APPLIED",
+    "IN_REVIEW",
+    "SCREENING_TEST",
+    "SHORTLISTED",
+    "INTERVIEW_SCHEDULE",
+    "OFFER",
+    "ONBOARDING",
+  ];
 }
 
 /**

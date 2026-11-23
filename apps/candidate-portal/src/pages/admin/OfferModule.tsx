@@ -291,6 +291,50 @@ ${1200 + len1 + len2 + len3}
   return { blob, url, filename };
 }
 
+// Inline editable document field components for interactive live editing on the document sheets
+const DocInput: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  placeholder?: string;
+  bold?: boolean;
+}> = ({ value, onChange, className = "", placeholder, bold = false }) => {
+  const charLength = Math.max((value || "").length, (placeholder?.length || 4));
+  return (
+    <input
+      type="text"
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      title="Click to edit directly on this document"
+      className={`inline-block bg-transparent border-b border-dashed border-slate-300 hover:border-brand focus:border-brand hover:bg-amber-50/70 focus:bg-amber-50/90 focus:outline-none transition-all px-1 py-0.5 rounded-xs text-inherit ${bold ? "font-bold" : ""} ${className}`}
+      style={{
+        width: `${charLength + 1}ch`,
+        maxWidth: "100%",
+        minWidth: "40px",
+      }}
+    />
+  );
+};
+
+const DocBlockInput: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  placeholder?: string;
+}> = ({ value, onChange, className = "", placeholder }) => {
+  return (
+    <input
+      type="text"
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      title="Click to edit directly on this document"
+      className={`w-full bg-transparent border-b border-dashed border-slate-300 hover:border-brand focus:border-brand hover:bg-amber-50/70 focus:bg-amber-50/90 focus:outline-none transition-all px-1 py-0.5 rounded-xs text-inherit ${className}`}
+    />
+  );
+};
+
 export function OfferModule({
   applications,
   jobs,
@@ -946,29 +990,6 @@ export function OfferModule({
                   <span>Edit Offer Details</span>
                 </button>
               </div>
-
-              {/* Page Tabs */}
-              <div className="flex items-center bg-white border border-line rounded-lg p-0.5 text-xs font-semibold">
-                {(
-                  [
-                    { id: "ALL", label: "All 3 Pages" },
-                    { id: "PAGE_1", label: "Page 1: Appointment & CTC" },
-                    { id: "PAGE_2", label: "Page 2: Terms & Conditions" },
-                    { id: "PAGE_3", label: "Page 3: Confirmation" },
-                  ] as const
-                ).map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setPreviewTab(t.id)}
-                    className={`px-2.5 py-1 rounded-md transition-all text-[11px] ${
-                      previewTab === t.id ? "bg-ink text-white font-bold" : "text-ink-muted hover:text-ink"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* ── EDIT MODE: INTERACTIVE FORM FIELDS ── */}
@@ -1229,9 +1250,27 @@ export function OfferModule({
               </div>
             )}
 
-            {/* ── PREVIEW MODE: AUTHENTIC 3-PAGE DOCUMENT SHEETS ── */}
+            {/* ── PREVIEW MODE: AUTHENTIC 3-PAGE DOCUMENT SHEETS (INTERACTIVE INLINE EDITABLE) ── */}
             {editorMode === "PREVIEW" && (
               <div className="max-h-[65vh] overflow-y-auto space-y-6 p-2 bg-slate-100 rounded-xl">
+                {/* Interactive Live Editor Helper Banner */}
+                <div className="max-w-2xl mx-auto flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2 w-2 rounded-full bg-emerald-600 animate-pulse" />
+                    <span className="font-bold">Interactive Live Editor:</span>
+                    <span className="text-emerald-800">
+                      Click any text or field directly on the document sheets below to edit in-place.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-md text-[11px] transition-colors shadow-xs"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+
                 {/* ── PAGE 1 SHEET ── */}
                 {(previewTab === "ALL" || previewTab === "PAGE_1") && (
                   <div className="max-w-2xl mx-auto rounded-xl border border-slate-300 bg-white shadow-md p-8 sm:p-10 text-slate-800 space-y-4 font-sans text-xs">
@@ -1242,11 +1281,40 @@ export function OfferModule({
                     </div>
 
                     <div className="space-y-1">
-                      <h2 className="text-base font-extrabold text-slate-900 tracking-tight">{activeOffer.companyName.toUpperCase()}</h2>
-                      <p className="text-[11px] text-slate-600">{activeOffer.companyAddress}</p>
-                      <p className="text-[11px] text-slate-500">
-                        {activeOffer.companyEmail} | {activeOffer.companyWebsite} | {activeOffer.contactNumber}
-                      </p>
+                      <DocInput
+                        value={activeOffer.companyName}
+                        onChange={(val) => setActiveOffer({ ...activeOffer, companyName: val })}
+                        className="text-base font-extrabold text-slate-900 tracking-tight uppercase"
+                        placeholder="COMPANY NAME"
+                        bold
+                      />
+                      <div>
+                        <DocBlockInput
+                          value={activeOffer.companyAddress}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, companyAddress: val })}
+                          className="text-[11px] text-slate-600"
+                          placeholder="Company Address"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 pt-0.5">
+                        <DocInput
+                          value={activeOffer.companyEmail}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, companyEmail: val })}
+                          placeholder="hr@company.com"
+                        />
+                        <span>|</span>
+                        <DocInput
+                          value={activeOffer.companyWebsite}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, companyWebsite: val })}
+                          placeholder="www.company.com"
+                        />
+                        <span>|</span>
+                        <DocInput
+                          value={activeOffer.contactNumber}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, contactNumber: val })}
+                          placeholder="+91 XXXXX XXXXX"
+                        />
+                      </div>
                     </div>
 
                     <hr className="border-slate-300 my-2" />
@@ -1255,31 +1323,108 @@ export function OfferModule({
                       <h3 className="text-sm font-extrabold tracking-wider text-slate-900 uppercase">OFFER LETTER</h3>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                      <span><strong>Date:</strong> {activeOffer.offerDate}</span>
-                      <span><strong>Reference No.:</strong> {activeOffer.referenceNo}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+                      <span className="flex items-center gap-1">
+                        <strong>Date:</strong>
+                        <DocInput
+                          value={activeOffer.offerDate}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, offerDate: val })}
+                          placeholder="DD/MM/YYYY"
+                          bold
+                        />
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <strong>Reference No.:</strong>
+                        <DocInput
+                          value={activeOffer.referenceNo}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, referenceNo: val })}
+                          placeholder="OFFER-2026-001"
+                          bold
+                        />
+                      </span>
                     </div>
 
                     <div className="space-y-0.5 text-xs text-slate-800">
                       <p className="font-bold">To,</p>
-                      <p className="font-bold text-slate-900 text-sm">{activeOffer.candidateName}</p>
-                      <p className="text-slate-600">{activeOffer.candidateAddress}</p>
+                      <div>
+                        <DocInput
+                          value={activeOffer.candidateName}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, candidateName: val })}
+                          className="font-bold text-slate-900 text-sm"
+                          placeholder="Candidate Full Name"
+                          bold
+                        />
+                      </div>
+                      <div>
+                        <DocBlockInput
+                          value={activeOffer.candidateAddress}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, candidateAddress: val })}
+                          className="text-slate-600"
+                          placeholder="Candidate Address, City, State"
+                        />
+                      </div>
                     </div>
 
-                    <div className="pt-1">
-                      <p className="font-bold text-slate-900 text-xs">
-                        Subject: Offer of Employment – {activeOffer.jobTitle}
-                      </p>
+                    <div className="pt-1 flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-slate-900 text-xs">Subject: Offer of Employment –</span>
+                      <DocInput
+                        value={activeOffer.jobTitle}
+                        onChange={(val) => setActiveOffer({ ...activeOffer, jobTitle: val })}
+                        className="font-bold text-slate-900 text-xs"
+                        placeholder="Job Designation"
+                        bold
+                      />
                     </div>
 
                     <div className="space-y-2 text-xs leading-relaxed text-slate-700">
-                      <p>Dear {activeOffer.candidateName},</p>
+                      <p>
+                        Dear{" "}
+                        <DocInput
+                          value={activeOffer.candidateName}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, candidateName: val })}
+                          className="font-semibold text-slate-800"
+                          placeholder="Candidate Name"
+                        />
+                        ,
+                      </p>
                       <p className="font-semibold text-slate-900">Congratulations!</p>
                       <p>
-                        We are pleased to offer you the position of <strong>{activeOffer.jobTitle}</strong> at <strong>{activeOffer.companyName}</strong>. Based on your qualifications, skills, and performance during the selection process, we believe that you will be a valuable addition to our organization.
+                        We are pleased to offer you the position of{" "}
+                        <DocInput
+                          value={activeOffer.jobTitle}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, jobTitle: val })}
+                          className="font-bold text-slate-900"
+                          placeholder="Job Title"
+                          bold
+                        />{" "}
+                        at{" "}
+                        <DocInput
+                          value={activeOffer.companyName}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, companyName: val })}
+                          className="font-bold text-slate-900"
+                          placeholder="Company Name"
+                          bold
+                        />
+                        . Based on your qualifications, skills, and performance during the selection process, we believe that you will be a valuable addition to our organization.
                       </p>
                       <p>
-                        Your employment is expected to commence on <strong>{activeOffer.joiningDate}</strong>, and your initial work location will be <strong>{activeOffer.workLocation}</strong>. You will be working under the guidance of your reporting manager and will be responsible for duties associated with your position.
+                        Your employment is expected to commence on{" "}
+                        <DocInput
+                          value={activeOffer.joiningDate}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, joiningDate: val })}
+                          className="font-bold text-slate-900"
+                          placeholder="DD/MM/YYYY"
+                          bold
+                        />
+                        , and your initial work location will be{" "}
+                        <DocInput
+                          value={activeOffer.workLocation}
+                          onChange={(val) => setActiveOffer({ ...activeOffer, workLocation: val })}
+                          className="font-bold text-slate-900"
+                          placeholder="Location (Workplace)"
+                          bold
+                        />
+                        . You will be working under the guidance of your reporting manager and will be responsible for duties associated with your position.
                       </p>
                     </div>
 
@@ -1287,7 +1432,23 @@ export function OfferModule({
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs">1. Compensation</h4>
                         <p className="text-xs leading-relaxed text-slate-700 mt-1">
-                          Your Annual Cost to Company (CTC) will be <strong>₹{activeOffer.annualCtc} ({activeOffer.ctcInWords})</strong>.
+                          Your Annual Cost to Company (CTC) will be ₹
+                          <DocInput
+                            value={activeOffer.annualCtc}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, annualCtc: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="18,00,000"
+                            bold
+                          />{" "}
+                          (
+                          <DocInput
+                            value={activeOffer.ctcInWords}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, ctcInWords: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="CTC in words"
+                            bold
+                          />
+                          ).
                         </p>
                         <p className="text-xs leading-relaxed text-slate-600 mt-0.5">
                           Your salary will be paid monthly, subject to applicable statutory deductions, taxes, and company policies. A detailed salary breakup will be provided separately, where applicable.
@@ -1304,7 +1465,15 @@ export function OfferModule({
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs">3. Employment Type</h4>
                         <p className="text-xs leading-relaxed text-slate-700 mt-1">
-                          Your employment will be on a <strong>{activeOffer.employmentType}</strong> basis, subject to the terms and conditions outlined in this letter.
+                          Your employment will be on a{" "}
+                          <DocInput
+                            value={activeOffer.employmentType}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, employmentType: val as any })}
+                            className="font-bold text-slate-900"
+                            placeholder="Full-Time"
+                            bold
+                          />{" "}
+                          basis, subject to the terms and conditions outlined in this letter.
                         </p>
                       </div>
                     </div>
@@ -1330,14 +1499,38 @@ export function OfferModule({
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs">4. Probation Period</h4>
                         <p className="mt-1">
-                          You will be on probation for a period of <strong>{activeOffer.probationPeriod}</strong> from your date of joining. Your performance and professional conduct will be evaluated during this period.
+                          You will be on probation for a period of{" "}
+                          <DocInput
+                            value={activeOffer.probationPeriod}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, probationPeriod: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="3 Months"
+                            bold
+                          />{" "}
+                          from your date of joining. Your performance and professional conduct will be evaluated during this period.
                         </p>
                       </div>
 
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs">5. Working Hours</h4>
                         <p className="mt-1">
-                          Your standard working days will be <strong>{activeOffer.workingDays}</strong>, and your working hours will be <strong>{activeOffer.workingHours}</strong>, subject to company policies and applicable laws.
+                          Your standard working days will be{" "}
+                          <DocInput
+                            value={activeOffer.workingDays}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, workingDays: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="Monday to Friday"
+                            bold
+                          />
+                          , and your working hours will be{" "}
+                          <DocInput
+                            value={activeOffer.workingHours}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, workingHours: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="9:30 AM to 6:30 PM"
+                            bold
+                          />
+                          , subject to company policies and applicable laws.
                         </p>
                       </div>
 
@@ -1365,7 +1558,23 @@ export function OfferModule({
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs">9. Notice Period</h4>
                         <p className="mt-1">
-                          The notice period during probation will be <strong>{activeOffer.noticePeriodProbation} days</strong>. After confirmation, the applicable notice period will be <strong>{activeOffer.noticePeriodConfirmed} days</strong>, subject to the employment agreement and applicable laws.
+                          The notice period during probation will be{" "}
+                          <DocInput
+                            value={activeOffer.noticePeriodProbation}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, noticePeriodProbation: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="30"
+                            bold
+                          />{" "}
+                          days. After confirmation, the applicable notice period will be{" "}
+                          <DocInput
+                            value={activeOffer.noticePeriodConfirmed}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, noticePeriodConfirmed: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="60"
+                            bold
+                          />{" "}
+                          days, subject to the employment agreement and applicable laws.
                         </p>
                       </div>
 
@@ -1398,7 +1607,15 @@ export function OfferModule({
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs">11. Offer Validity</h4>
                         <p className="mt-1">
-                          This offer will remain valid until <strong>{activeOffer.offerExpiryDate}</strong>. You are requested to confirm your acceptance on or before the specified date.
+                          This offer will remain valid until{" "}
+                          <DocInput
+                            value={activeOffer.offerExpiryDate}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, offerExpiryDate: val })}
+                            className="font-bold text-slate-900"
+                            placeholder="DD/MM/YYYY"
+                            bold
+                          />
+                          . You are requested to confirm your acceptance on or before the specified date.
                         </p>
                       </div>
 
@@ -1417,8 +1634,23 @@ export function OfferModule({
 
                       <div className="pt-3 space-y-1">
                         <p className="font-bold text-slate-900">Best Regards,</p>
-                        <p className="font-bold text-slate-900 text-sm mt-1">{activeOffer.hrManagerName}</p>
-                        <p className="text-slate-600">{activeOffer.hrDesignation}</p>
+                        <div>
+                          <DocInput
+                            value={activeOffer.hrManagerName}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, hrManagerName: val })}
+                            className="font-bold text-slate-900 text-sm"
+                            placeholder="HR Manager Name"
+                            bold
+                          />
+                        </div>
+                        <div>
+                          <DocInput
+                            value={activeOffer.hrDesignation}
+                            onChange={(val) => setActiveOffer({ ...activeOffer, hrDesignation: val })}
+                            className="text-slate-600"
+                            placeholder="HR Designation"
+                          />
+                        </div>
                         <p className="text-slate-600 font-semibold">{activeOffer.companyName}</p>
                         <p className="text-slate-500 pt-3">
                           Authorized Signature: ____________________________________________________
@@ -1450,7 +1682,15 @@ export function OfferModule({
                         </p>
                         <div className="flex items-center justify-between pt-1 text-slate-600">
                           <span><strong>Date:</strong> {activeOffer.signedAt ? activeOffer.signedAt.slice(0, 10) : "[DD/MM/YYYY]"}</span>
-                          <span><strong>Joining Date:</strong> {activeOffer.joiningDate}</span>
+                          <span className="flex items-center gap-1">
+                            <strong>Joining Date:</strong>
+                            <DocInput
+                              value={activeOffer.joiningDate}
+                              onChange={(val) => setActiveOffer({ ...activeOffer, joiningDate: val })}
+                              placeholder="DD/MM/YYYY"
+                              bold
+                            />
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1473,13 +1713,17 @@ export function OfferModule({
             {/* ── FOOTER ACTIONS ── */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-line pt-3">
               <div className="flex items-center gap-2">
+                <Button variant="primary" onClick={handleSaveDraft} className="text-xs font-semibold">
+                  <span>Save Draft Changes</span>
+                </Button>
+
                 {editorMode === "EDIT" ? (
-                  <Button variant="ghost" onClick={handleSaveDraft} className="text-xs font-semibold">
-                    <span>Save Draft Changes</span>
+                  <Button variant="ghost" onClick={() => setEditorMode("PREVIEW")} className="text-xs font-semibold">
+                    <span>Document View</span>
                   </Button>
                 ) : (
                   <Button variant="ghost" onClick={() => setEditorMode("EDIT")} className="text-xs font-semibold">
-                    <span>Edit Form Fields</span>
+                    <span>Structured Form</span>
                   </Button>
                 )}
 

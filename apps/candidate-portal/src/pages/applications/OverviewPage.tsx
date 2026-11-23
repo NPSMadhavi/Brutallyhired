@@ -14,6 +14,112 @@ import { Avatar } from "@/components/ui/misc";
 import { useFormat } from "@/lib/format";
 import { stageTone } from "./stageTone";
 
+function buildCandidateJourneyTrack(stage: string, submittedAt?: string | null) {
+  const normStage = (stage || "SUBMITTED").toUpperCase();
+
+  const isInReviewDone = [
+    "SCREENING_TEST",
+    "ASSESSMENT",
+    "SHORTLISTED",
+    "INTERVIEW",
+    "INTERVIEW_SCHEDULE",
+    "INTERVIEW_SCHEDULED",
+    "OFFER",
+    "SELECTED",
+    "ONBOARDING",
+    "HIRED",
+  ].includes(normStage);
+  const isInReviewCurrent =
+    normStage === "SUBMITTED" || normStage === "IN_REVIEW" || normStage === "UNDER_REVIEW";
+
+  const isScreeningDone = [
+    "SHORTLISTED",
+    "INTERVIEW",
+    "INTERVIEW_SCHEDULE",
+    "INTERVIEW_SCHEDULED",
+    "OFFER",
+    "SELECTED",
+    "ONBOARDING",
+    "HIRED",
+  ].includes(normStage);
+  const isScreeningCurrent = normStage === "SCREENING_TEST" || normStage === "ASSESSMENT";
+
+  const isShortlistedDone = [
+    "INTERVIEW",
+    "INTERVIEW_SCHEDULE",
+    "INTERVIEW_SCHEDULED",
+    "OFFER",
+    "SELECTED",
+    "ONBOARDING",
+    "HIRED",
+  ].includes(normStage);
+  const isShortlistedCurrent = normStage === "SHORTLISTED";
+
+  const isInterviewDone = ["OFFER", "SELECTED", "ONBOARDING", "HIRED"].includes(normStage);
+  const isInterviewCurrent =
+    normStage === "INTERVIEW" ||
+    normStage === "INTERVIEW_SCHEDULE" ||
+    normStage === "INTERVIEW_SCHEDULED" ||
+    normStage.includes("INTERVIEW");
+
+  const isOfferDone = ["ONBOARDING", "HIRED"].includes(normStage);
+  const isOfferCurrent = normStage === "OFFER" || normStage === "SELECTED";
+
+  const isOnboardingDone = normStage === "HIRED";
+  const isOnboardingCurrent = normStage === "ONBOARDING";
+
+  return [
+    {
+      key: "APPLIED",
+      label: "Applied",
+      state: (isInReviewDone || isInReviewCurrent ? "done" : "current") as "done" | "current" | "upcoming",
+      at: submittedAt || null,
+    },
+    {
+      key: "IN_REVIEW",
+      label: "In review",
+      state: (isInReviewDone ? "done" : isInReviewCurrent ? "current" : "upcoming") as "done" | "current" | "upcoming",
+      at: null,
+    },
+    {
+      key: "SCREENING_TEST",
+      label: "Screening test",
+      state: (isScreeningDone ? "done" : isScreeningCurrent ? "current" : "upcoming") as "done" | "current" | "upcoming",
+      at: null,
+    },
+    {
+      key: "SHORTLISTED",
+      label: "Shortlisted",
+      state: (isShortlistedDone ? "done" : isShortlistedCurrent ? "current" : "upcoming") as "done" | "current" | "upcoming",
+      at: null,
+    },
+    {
+      key: "INTERVIEW_SCHEDULE",
+      label: "Interview schedule",
+      state: (isInterviewDone ? "done" : isInterviewCurrent ? "current" : "upcoming") as "done" | "current" | "upcoming",
+      at: null,
+      showRounds: isInterviewCurrent,
+      rounds: [
+        { name: "Round 1", state: isInterviewCurrent ? "current" : isInterviewDone ? "done" : "upcoming" },
+        { name: "Round 2", state: isInterviewDone ? "done" : "upcoming" },
+        { name: "Round 3", state: isInterviewDone ? "done" : "upcoming" },
+      ],
+    },
+    {
+      key: "OFFER",
+      label: "Offer",
+      state: (isOfferDone ? "done" : isOfferCurrent ? "current" : "upcoming") as "done" | "current" | "upcoming",
+      at: null,
+    },
+    {
+      key: "ONBOARDING",
+      label: "Onboarding",
+      state: (isOnboardingDone ? "done" : isOnboardingCurrent ? "current" : "upcoming") as "done" | "current" | "upcoming",
+      at: null,
+    },
+  ];
+}
+
 export function OverviewPage() {
   const tenant = useTenantCtx();
   const { t } = useTranslation();
@@ -77,41 +183,44 @@ export function OverviewPage() {
               ]
             : []),
         ],
-        track: [
-          { key: "SUBMITTED", label: "Application Submitted", done: true, current: stage === "SUBMITTED" },
-          {
-            key: "IN_REVIEW",
-            label: "Under Review & Screening",
-            done: ["IN_REVIEW", "SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "ONBOARDING", "HIRED"].includes(stage),
-            current: stage === "IN_REVIEW",
-          },
-          {
-            key: "ASSESSMENT",
-            label: "BrutalAssessAI™ Assessment",
-            done: ["ASSESSMENT", "INTERVIEW", "OFFER", "ONBOARDING", "HIRED"].includes(stage),
-            current: stage === "ASSESSMENT",
-          },
-          {
-            key: "INTERVIEW",
-            label: "LiveKit Video Rounds",
-            done: ["INTERVIEW", "OFFER", "ONBOARDING", "HIRED"].includes(stage),
-            current: stage === "INTERVIEW",
-          },
-          {
-            key: "OFFER",
-            label: "Offer & Onboarding",
-            done: ["OFFER", "ONBOARDING", "HIRED"].includes(stage),
-            current: stage === "OFFER" || stage === "ONBOARDING" || stage === "HIRED",
-          },
-        ],
+        track: buildCandidateJourneyTrack(stage, draftParsed.submittedAt || matchingApp?.submittedAt),
         nextAction:
-          stage === "SHORTLISTED" || stage === "ASSESSMENT"
-            ? { kind: "ASSESSMENT", label: "Start BrutalAssessAI™ Examination", path: `/${tenant.slug}/applications/${appId}/assessments` }
-            : stage === "INTERVIEW"
-            ? { kind: "INTERVIEW", label: "Join Scheduled LiveKit Interview", path: `/${tenant.slug}/applications/${appId}/interviews` }
-            : stage === "OFFER"
-            ? { kind: "OFFER", label: "Review & Sign Formal Offer", path: `/${tenant.slug}/applications/${appId}/offer` }
-            : null,
+          stage === "WITHDRAWN"
+            ? { type: "CLOSED", reason: "WITHDRAWN" }
+            : stage === "REJECTED" || stage === "NOT_SELECTED"
+            ? { type: "CLOSED", reason: "NOT_SELECTED" }
+            : stage === "SCREENING_TEST" || stage === "ASSESSMENT"
+            ? {
+                type: "TAKE_ASSESSMENT",
+                title: "Screening Test",
+                dueAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+                durationMinutes: 30,
+                inviteId: appId,
+              }
+            : stage === "SHORTLISTED"
+            ? {
+                type: "AWAIT_DECISION",
+              }
+            : stage === "INTERVIEW" || stage === "INTERVIEW_SCHEDULE" || stage === "INTERVIEW_SCHEDULED"
+            ? {
+                type: "ATTEND_INTERVIEW",
+                title: "Interview Schedule (Round 1, Round 2, Round 3)",
+                startsAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+                endsAt: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
+                roundId: appId,
+              }
+            : stage === "OFFER" || stage === "SELECTED"
+            ? {
+                type: "RESPOND_TO_OFFER",
+                respondBy: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+              }
+            : stage === "ONBOARDING" || stage === "HIRED"
+            ? {
+                type: "COMPLETE_ONBOARDING",
+                pending: 2,
+                startDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
+              }
+            : { type: "AWAIT_REVIEW" },
       } as any;
     }
   }
@@ -141,7 +250,7 @@ export function OverviewPage() {
           </div>
           <Pill tone={stageTone(o.stage)} dot className="px-3 py-1.5 text-[13px]">{t(`stage.${o.stage}`)}</Pill>
         </div>
-        {!o.closed && <JourneyTrack track={o.track} />}
+        {!o.closed && <JourneyTrack track={buildCandidateJourneyTrack(o.stage, o.submittedAt)} />}
         <NextStepCard action={o.nextAction} base={base} draftPath={o.stage === "DRAFT" ? `${base}/apply/details` : null} />
       </section>
 
