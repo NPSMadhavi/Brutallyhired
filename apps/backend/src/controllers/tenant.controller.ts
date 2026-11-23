@@ -2,6 +2,7 @@ import { prisma } from "@verity/db";
 import type { RequestHandler } from "express";
 import { env, aiEnabled } from "../config/env.js";
 import { jobPublic } from "../serializers/candidate.serializer.js";
+import { callAiJson } from "../services/ai.service.js";
 import { sendTemplate, type TemplateKey } from "../services/email.service.js";
 import { toTenantPublic } from "../services/tenant.service.js";
 import { ah, notFound } from "../utils/errors.js";
@@ -625,32 +626,19 @@ Respond ONLY with valid JSON in this exact structure:
 }`;
       }
 
-      const aiRes = await fetch(`${env.AI_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.AI_API_KEY}` },
-        signal: AbortSignal.timeout(30_000),
-        body: JSON.stringify({
-          model: env.AI_MODEL,
-          temperature: 0.2,
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: "You are an AI assessment engine that outputs strict, valid JSON only." },
-            { role: "user", content: prompt },
-          ],
-        }),
+      const parsed = await callAiJson<any>({
+        message: prompt,
+        systemPrompt: "You are an AI assessment engine that outputs strict, valid JSON only.",
+        temperature: 0.2,
+        timeoutMs: 45_000,
       });
 
-      if (aiRes.ok) {
-        const body = (await aiRes.json()) as any;
-        const rawContent = body.choices?.[0]?.message?.content;
-        if (rawContent) {
-          const parsed = JSON.parse(rawContent);
-          if (roundType === "TECHNICAL_MCQ" && Array.isArray(parsed.questions)) {
-            // Guarantee exactly the requested count
-            parsed.questions = synthesizeMcqs(parsed.questions);
-          }
-          return res.json({ ok: true, source: "AI_MODEL", model: env.AI_MODEL, data: parsed });
+      if (parsed) {
+        if (roundType === "TECHNICAL_MCQ" && Array.isArray(parsed.questions)) {
+          // Guarantee exactly the requested count
+          parsed.questions = synthesizeMcqs(parsed.questions);
         }
+        return res.json({ ok: true, source: "AI_MODEL", model: env.AI_MODEL, data: parsed });
       }
     } catch (e) {
       logger.warn({ e }, "Remote AI call failed, falling back to local generator");

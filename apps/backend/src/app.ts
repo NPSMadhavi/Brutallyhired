@@ -7,6 +7,7 @@ import { csrfGuard, loadSession } from "./middlewares/auth.middleware.js";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
 import { apiLimiter } from "./middlewares/rateLimit.middleware.js";
 import { apiRouter } from "./routes/index.js";
+import { authRoutes } from "./routes/auth.routes.js";
 import { logger } from "./utils/logger.js";
 
 export function createApp() {
@@ -21,6 +22,10 @@ export function createApp() {
   app.use("/api", apiLimiter, loadSession, csrfGuard);
 
   app.use("/api", apiRouter);
+  // Also mount /auth and /health at root for compatibility with external provider redirects
+  app.use("/auth", apiLimiter, loadSession, csrfGuard, authRoutes);
+  app.get("/health", (_req, res) => res.json({ ok: true }));
+
   app.use("/api", notFoundHandler);
   app.use(errorHandler);
 

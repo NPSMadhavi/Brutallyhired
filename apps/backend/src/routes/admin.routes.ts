@@ -25,6 +25,8 @@ adminRoutes.post("/applications/:id/rescore", recruiterOnly, c.rescoreApplicatio
 adminRoutes.get("/assessment-templates", c.listAssessmentTemplates);
 adminRoutes.post("/assessment-templates", recruiterOnly, c.createAssessmentTemplate);
 adminRoutes.post("/applications/:id/assessment-invites", recruiterOnly, c.inviteToAssessment);
+adminRoutes.get("/applications/:id/ai-assessment", recruiterOnly, c.getCandidateAiAssessment);
+adminRoutes.post("/applications/:id/approve-assessment", recruiterOnly, c.approveAndSendAssessment);
 adminRoutes.get("/attempts/:id/proctoring", recruiterOnly, c.getProctoringReview);
 adminRoutes.post("/applications/:id/interviews", recruiterOnly, c.createInterviewRound);
 adminRoutes.post("/interviews/:id/complete", c.completeInterview);

@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ACCEPTED_RESUME_MIME, resumeSummarySchema, type ResumeSummary } from "@verity/shared";
 import { clsx } from "clsx";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -141,6 +141,22 @@ export function ResumeStep() {
   const replaceInput = useRef<HTMLInputElement>(null);
   const status = draft.resumeReadStatus;
 
+  // Keep local draft storage synchronized with backend AI extraction results
+  useEffect(() => {
+    if (draft.resumeSummary && draft.resumeReadStatus === "READ") {
+      const local = localStorage.getItem(`bh_draft_${draft.id}`);
+      if (local) {
+        try {
+          const parsed = JSON.parse(local);
+          parsed.resumeSummary = draft.resumeSummary;
+          parsed.resumeReadStatus = "READ";
+          parsed.resume = draft.resume;
+          localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
+        } catch { }
+      }
+    }
+  }, [draft.resumeSummary, draft.resumeReadStatus, draft.resume, draft.id]);
+
   return (
     <>
       <section className="card flex flex-col gap-5 md:p-8" aria-labelledby="cv-h">
@@ -177,14 +193,7 @@ export function ResumeStep() {
                         mimeType: file.type || "application/pdf",
                         createdAt: new Date().toISOString(),
                       };
-                      parsed.resumeReadStatus = "READ";
-                      parsed.resumeSummary = {
-                        currentRole: "Software Developer",
-                        totalExperience: "3 years",
-                        education: ["B.Tech in Computer Science"],
-                        skills: ["TypeScript", "React", "Node.js", "System Design"],
-                        certifications: ["Full-Stack Engineering"],
-                      };
+                      parsed.resumeReadStatus = "READING";
                       const reader = new FileReader();
                       reader.onload = () => {
                         try {
@@ -195,7 +204,7 @@ export function ResumeStep() {
                       };
                       reader.readAsDataURL(file);
                       localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
-                    } catch {}
+                    } catch { }
                   }
                   upload.mutate(file);
                 }
@@ -220,14 +229,7 @@ export function ResumeStep() {
                     mimeType: file.type || "application/pdf",
                     createdAt: new Date().toISOString(),
                   };
-                  parsed.resumeReadStatus = "READ";
-                  parsed.resumeSummary = {
-                    currentRole: "Software Developer",
-                    totalExperience: "3 years",
-                    education: ["B.Tech in Computer Science"],
-                    skills: ["TypeScript", "React", "Node.js", "System Design"],
-                    certifications: ["Full-Stack Engineering"],
-                  };
+                  parsed.resumeReadStatus = "READING";
                   const reader = new FileReader();
                   reader.onload = () => {
                     try {
@@ -238,7 +240,7 @@ export function ResumeStep() {
                   };
                   reader.readAsDataURL(file);
                   localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
-                } catch {}
+                } catch { }
               }
               upload.mutate(file);
             }}
