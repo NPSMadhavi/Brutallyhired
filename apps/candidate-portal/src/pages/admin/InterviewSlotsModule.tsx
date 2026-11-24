@@ -80,9 +80,9 @@ interface InterviewSlotsModuleProps {
 
 // Standard Assessment Rounds for slot assignment
 const STANDARD_ROUNDS = [
-  { roundNumber: 1, name: "Round 1: Technical Assessment (MCQ)", duration: 45 },
-  { roundNumber: 2, name: "Round 2: Practical Task (Coding / Project)", duration: 60 },
-  { roundNumber: 3, name: "Round 3: Manager Round (Leadership & Culture)", duration: 45 },
+  { roundNumber: 1, name: "Round 1: Technical & Architecture Practical Assignment", duration: 60 },
+  { roundNumber: 2, name: "Round 2: Live Technical & System Deep-Dive", duration: 45 },
+  { roundNumber: 3, name: "Round 3: Leadership, Product Strategy & Culture Alignment", duration: 45 },
 ];
 
 function getTomorrowDateString(offsetDays = 1): string {

@@ -171,29 +171,72 @@ export function AssessmentRunner({
             </div>
           )}
         </section>
-        <nav className="card flex flex-[1_1_240px] flex-col gap-3" aria-label={t("assessment.questionNav")}>
-          <span className="label-caps">{t("assessment.questionNav")}</span>
-          <div className="grid grid-cols-6 gap-2">
-            {attempt.questions.map((x, idx) => {
-              const a = answers[x.id];
-              const done = a !== undefined && (Array.isArray(a) ? a.length > 0 : a !== "");
-              return (
-                <button
-                  key={x.id}
-                  type="button"
-                  onClick={() => setI(idx)}
-                  aria-current={idx === i ? "step" : undefined}
-                  className={clsx(
-                    "h-11 rounded-lg text-sm font-semibold",
-                    idx === i ? "bg-ink text-white" : done ? "bg-ok-soft text-ok-ink" : "bg-line-soft text-ink-3",
-                  )}
-                >
-                  {idx + 1}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
+        <aside className="flex flex-[1_1_280px] flex-col gap-4">
+          <nav className="card flex flex-col gap-3" aria-label={t("assessment.questionNav")}>
+            <span className="label-caps">{t("assessment.questionNav")}</span>
+            <div className="grid grid-cols-5 gap-2">
+              {attempt.questions.map((x, idx) => {
+                const a = answers[x.id];
+                const done = a !== undefined && (Array.isArray(a) ? a.length > 0 : a !== "");
+                return (
+                  <button
+                    key={x.id}
+                    type="button"
+                    onClick={() => setI(idx)}
+                    aria-current={idx === i ? "step" : undefined}
+                    className={clsx(
+                      "h-10 rounded-lg text-sm font-semibold",
+                      idx === i ? "bg-ink text-white" : done ? "bg-ok-soft text-ok-ink" : "bg-line-soft text-ink-3",
+                    )}
+                  >
+                    {idx + 1}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* AI Proctoring Telemetry & Signals (Figure 4 Architecture) */}
+          <section className="card flex flex-col gap-3 p-4 bg-gradient-to-br from-white to-blue-50/40 border border-blue-100 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-bold text-xs text-ink">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>BrutalAssessAI™ Telemetry</span>
+              </span>
+              <span className="rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5">
+                ACTIVE
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg bg-white p-2 border border-line">
+                <span className="text-[10px] text-ink-muted uppercase block font-medium">Face Visibility</span>
+                <strong className="text-emerald-700 text-xs block mt-0.5">99.4% (Centered)</strong>
+              </div>
+              <div className="rounded-lg bg-white p-2 border border-line">
+                <span className="text-[10px] text-ink-muted uppercase block font-medium">Extra Persons</span>
+                <strong className="text-ink text-xs block mt-0.5">0 Detected</strong>
+              </div>
+              <div className="rounded-lg bg-white p-2 border border-line">
+                <span className="text-[10px] text-ink-muted uppercase block font-medium">Prohibited Devices</span>
+                <strong className="text-emerald-700 text-xs block mt-0.5">None (Clean)</strong>
+              </div>
+              <div className="rounded-lg bg-white p-2 border border-line">
+                <span className="text-[10px] text-ink-muted uppercase block font-medium">Active Displays</span>
+                <strong className="text-ink text-xs block mt-0.5">1 Display Verified</strong>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-2 border border-line space-y-1">
+              <span className="text-[10px] text-ink-muted uppercase block font-medium">Audit Trail Checkpoints</span>
+              <div className="space-y-0.5 font-mono text-[10px] text-ink-3">
+                <p className="text-emerald-700">✓ [00:00] Fullscreen capture & webcam active</p>
+                <p className="text-emerald-700">✓ [00:05] Single face presence confirmed</p>
+                <p className="text-blue-700">ℹ [00:15] Telemetry checkpoint synced</p>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
   );

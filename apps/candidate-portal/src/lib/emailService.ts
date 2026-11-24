@@ -46,6 +46,9 @@ export async function sendEmailNotification({
   tenantSlug = "brutallyhired",
   customHeading,
   customBody,
+  customSubject,
+  roundTitle,
+  roundNumber,
   attachmentName,
 }: {
   to: string;
@@ -56,11 +59,14 @@ export async function sendEmailNotification({
   tenantSlug?: string;
   customHeading?: string;
   customBody?: string;
+  customSubject?: string;
+  roundTitle?: string;
+  roundNumber?: number;
   attachmentName?: string;
 }): Promise<SentEmailRecord> {
   const fullPortalUrl = `${window.location.origin}${portalPath}`;
 
-  let subject = "";
+  let subject = customSubject || "";
   let heading = customHeading || "";
   let body = customBody || "";
   let templateKey = "assessment_invited";
@@ -69,7 +75,7 @@ export async function sendEmailNotification({
     case "SHORTLISTED":
     case "ASSESSMENT":
       templateKey = "assessment_invited";
-      subject = `Assessment ready — ${jobTitle}`;
+      subject = subject || `Assessment ready — ${jobTitle}`;
       heading = heading || `Congratulations ${recipientName}, you've been shortlisted!`;
       body =
         body ||
@@ -78,16 +84,24 @@ export async function sendEmailNotification({
 
     case "INTERVIEW":
       templateKey = "interview_invited";
-      subject = `Please book your interview — ${jobTitle}`;
-      heading = heading || `Interview Invitation: Technical Round with Panel`;
-      body =
-        body ||
-        `Congratulations on passing the BrutalAssessAI™ examination! The engineering leadership team would love to meet you for the System Architecture & Technical Round. Please book your slot or join the LiveKit video room directly in the portal.`;
+      if (roundNumber) {
+        subject = subject || `Interview Round ${roundNumber}: ${roundTitle || "Practical Evaluation"} — ${jobTitle}`;
+        heading = heading || `Interview Round ${roundNumber}: ${roundTitle || "Technical Round with Panel"}`;
+        body =
+          body ||
+          `Congratulations on your progress! You have been invited to Round ${roundNumber} (${roundTitle || "Practical Technical Round"}). Please open the candidate portal to submit your assignment, select your preferred interview slot, or join the live session.`;
+      } else {
+        subject = subject || `Please book your interview — ${jobTitle}`;
+        heading = heading || `Interview Invitation: 3-Round Evaluation Process`;
+        body =
+          body ||
+          `Congratulations on passing the BrutalAssessAI™ examination! The engineering leadership team would love to meet you for the 3-round interview evaluation. Please book your slots and complete your practical assignments in the candidate portal.`;
+      }
       break;
 
     case "OFFER":
       templateKey = "offer_sent";
-      subject = `You have an offer from Brutallyhired — ${jobTitle}`;
+      subject = subject || `You have an offer from Brutallyhired — ${jobTitle}`;
       heading = heading || `Official Job Offer: ${jobTitle}`;
       body =
         body ||
@@ -96,7 +110,7 @@ export async function sendEmailNotification({
 
     case "HIRED":
       templateKey = "hired";
-      subject = `Welcome to the team — ${jobTitle} at Brutallyhired`;
+      subject = subject || `Welcome to the team — ${jobTitle} at Brutallyhired`;
       heading = heading || `Welcome Aboard, ${recipientName}!`;
       body =
         body ||
@@ -120,7 +134,7 @@ export async function sendEmailNotification({
 
   // Attempt real backend email dispatch via Nodemailer
   try {
-    await fetch(`/t/${tenantSlug}/notifications/send-email`, {
+    await fetch(`/api/t/${tenantSlug}/notifications/send-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -129,12 +143,15 @@ export async function sendEmailNotification({
         vars: {
           jobTitle,
           assessmentTitle: "Senior Full-Stack & Architecture Challenge",
-          roundTitle: "System Architecture & Technical Round",
+          roundTitle: roundTitle || "System Architecture & Technical Round",
           dueAt: "in 3 days",
           durationMinutes: 45,
           respondBy: "7 days",
         },
         path: portalPath,
+        customSubject: subject,
+        customHeading: heading,
+        customBody: body,
       }),
     });
   } catch (err) {

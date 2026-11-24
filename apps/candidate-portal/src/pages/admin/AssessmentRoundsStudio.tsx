@@ -1062,6 +1062,29 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
       secureTestLink: secureLink,
     });
 
+    try {
+      const rawApps = localStorage.getItem("bh_admin_applications");
+      if (rawApps) {
+        const parsed = JSON.parse(rawApps);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.map((a: any) => {
+            if (
+              a.id === selectedCandidate.id ||
+              (a.email && a.email.toLowerCase() === (selectedCandidate.email || "").toLowerCase())
+            ) {
+              return { ...a, stage: "ASSESSMENT", score: Math.max(a.score || 0, 75) };
+            }
+            return a;
+          });
+          localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+        }
+      }
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: "ASSESSMENT" } }));
+    } catch (e) {
+      console.warn("Could not sync application stage on approval:", e);
+    }
+
     setStatusNotice(`✅ Round #${currentRound.roundNumber} approved by HR! Ready for candidate dispatch.`);
     setTimeout(() => setStatusNotice(""), 4000);
   };
@@ -1106,6 +1129,39 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
         emailDispatchedAt: nowTime,
         emailDispatchedTo: candidateEmail,
       });
+
+      // Update candidate application stage in localStorage to ASSESSMENT so candidate portal updates immediately
+      try {
+        const rawApps = localStorage.getItem("bh_admin_applications");
+        if (rawApps) {
+          const parsed = JSON.parse(rawApps);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.map((a: any) => {
+              if (
+                a.id === selectedCandidate.id ||
+                (a.email && a.email.toLowerCase() === candidateEmail.toLowerCase())
+              ) {
+                return { ...a, stage: "ASSESSMENT", score: Math.max(a.score || 0, 75) };
+              }
+              return a;
+            });
+            localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+          }
+        }
+
+        const draftKey = `bh_draft_${selectedCandidate.id}`;
+        const rawDraft = localStorage.getItem(draftKey);
+        if (rawDraft) {
+          const parsedDraft = JSON.parse(rawDraft);
+          parsedDraft.stage = "ASSESSMENT";
+          localStorage.setItem(draftKey, JSON.stringify(parsedDraft));
+        }
+
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: "ASSESSMENT", candidateEmail } }));
+      } catch (err) {
+        console.warn("Could not sync candidate stage:", err);
+      }
 
       setStatusNotice(`✉️ Secure test link emailed successfully to ${candidateEmail}!`);
     } catch (e) {

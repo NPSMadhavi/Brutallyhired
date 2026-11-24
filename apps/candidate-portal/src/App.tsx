@@ -51,6 +51,8 @@ const router = createBrowserRouter([
       { path: "dashboard", element: <AdminDashboard /> },
       { path: "signin", element: <SignInPage /> },
       { path: "apply/:jobRef", element: <ApplyEntry /> },
+      { path: "assessment/:inviteId", element: <AssessmentPage /> },
+      { path: "assessments/:inviteId", element: <AssessmentPage /> },
       {
         element: <RequireAuth />,
         children: [
@@ -71,8 +73,21 @@ const router = createBrowserRouter([
             children: [
               { path: "applications", element: <ApplicationsListPage /> },
               { path: "applications/:appId", element: <OverviewPage /> },
+              { path: "assessment/:inviteId", element: <AssessmentPage /> },
+              { path: "assessments/:inviteId", element: <AssessmentPage /> },
               { path: "applications/:appId/assessments", element: <AssessmentsPage /> },
               { path: "applications/:appId/assessments/:inviteId", element: <AssessmentPage /> },
+              { path: "applications/:appId/assessment/:inviteId", element: <AssessmentPage /> },
+              { path: "interviews", element: <InterviewsPage /> },
+              { path: "interviews/:roundId", element: <InterviewPage /> },
+              {
+                path: "interviews/:roundId/join",
+                element: (
+                  <Suspense fallback={<PageLoader />}>
+                    <JoinPage />
+                  </Suspense>
+                ),
+              },
               { path: "applications/:appId/interviews", element: <InterviewsPage /> },
               { path: "applications/:appId/interviews/:roundId", element: <InterviewPage /> },
               {
@@ -83,6 +98,8 @@ const router = createBrowserRouter([
                   </Suspense>
                 ),
               },
+              { path: "offer", element: <OfferPage /> },
+              { path: "onboarding", element: <OnboardingPage /> },
               { path: "applications/:appId/offer", element: <OfferPage /> },
               { path: "applications/:appId/onboarding", element: <OnboardingPage /> },
               { path: "notifications", element: <NotificationsPage /> },

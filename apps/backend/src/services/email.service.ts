@@ -30,19 +30,22 @@ export interface SendOptions {
   locale?: string | null;
   /** In-app path for the call-to-action button. */
   path?: string;
+  subject?: string;
+  heading?: string;
+  body?: string;
   attachments?: { filename: string; content: string | Buffer; contentType: string }[];
 }
 
 export async function sendTemplate(opts: SendOptions) {
   const cat = catalogs[opts.locale ?? "en"] ?? en;
-  const t = cat[opts.template] as { subject: string; heading: string; body: string; highlight?: string };
+  const t = cat[opts.template] as { subject: string; heading: string; body: string; highlight?: string } | undefined;
   const tenantName = opts.tenant?.name ?? cat.layout.platform;
   const vars = { ...opts.vars, tenant: tenantName };
   const brand = opts.tenant?.brandColor ?? "#2F5BEA";
-  const subject = fill(t.subject, vars);
-  const heading = fill(t.heading, vars);
-  const body = fill(t.body, vars);
-  const highlight = t.highlight ? fill(t.highlight, vars) : null;
+  const subject = opts.subject || (t ? fill(t.subject, vars) : "Notification from Brutallyhired");
+  const heading = opts.heading || (t ? fill(t.heading, vars) : "Notification from Brutallyhired");
+  const body = opts.body || (t ? fill(t.body, vars) : "");
+  const highlight = t?.highlight ? fill(t.highlight, vars) : null;
   const url = opts.path ? new URL(opts.path, env.WEB_ORIGIN).toString() : null;
 
   const html = `<!doctype html><html><body style="margin:0;background:#F4F6FA;font-family:Inter,Segoe UI,Arial,sans-serif;color:#0E1726">

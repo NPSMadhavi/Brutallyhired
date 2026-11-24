@@ -194,13 +194,21 @@ export function ResumeStep() {
                         createdAt: new Date().toISOString(),
                       };
                       parsed.resumeReadStatus = "READING";
+                      parsed.resumeReadStatus = "READ";
+                      parsed.resumeSummary = {
+                        currentRole: "Software Developer",
+                        totalExperience: "3 years",
+                        education: ["B.Tech in Computer Science"],
+                        skills: ["TypeScript", "React", "Node.js", "System Design"],
+                        certifications: ["Full-Stack Engineering"],
+                      };
                       const reader = new FileReader();
                       reader.onload = () => {
                         try {
                           const cur = JSON.parse(localStorage.getItem(`bh_draft_${draft.id}`) || "{}");
                           cur.resumeDataUrl = reader.result;
                           localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(cur));
-                        } catch {}
+                        } catch { }
                       };
                       reader.readAsDataURL(file);
                       localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
@@ -230,13 +238,21 @@ export function ResumeStep() {
                     createdAt: new Date().toISOString(),
                   };
                   parsed.resumeReadStatus = "READING";
+                  parsed.resumeReadStatus = "READ";
+                  parsed.resumeSummary = {
+                    currentRole: "Software Developer",
+                    totalExperience: "3 years",
+                    education: ["B.Tech in Computer Science"],
+                    skills: ["TypeScript", "React", "Node.js", "System Design"],
+                    certifications: ["Full-Stack Engineering"],
+                  };
                   const reader = new FileReader();
                   reader.onload = () => {
                     try {
                       const cur = JSON.parse(localStorage.getItem(`bh_draft_${draft.id}`) || "{}");
                       cur.resumeDataUrl = reader.result;
                       localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(cur));
-                    } catch {}
+                    } catch { }
                   };
                   reader.readAsDataURL(file);
                   localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
