@@ -92,17 +92,17 @@ export function OfferPage() {
     // Advance candidate to HIRED in localStorage
     try {
       const rawApps = localStorage.getItem("bh_admin_applications");
-      let candidateEmail = "rahul.sharma@example.com";
-      let candidateName = v.signatureName || "Candidate";
-      let jobTitle = "Software Developer";
+      let candidateEmail = "netopsysai@gmail.com";
+      let candidateName = v.signatureName || "praveen Nobi";
+      let jobTitle = "Ai Ml";
       if (rawApps) {
         const parsed = JSON.parse(rawApps);
         if (Array.isArray(parsed)) {
           const updated = parsed.map((a: any) => {
             if (a.id === appId || a.stage === "OFFER") {
-              candidateEmail = a.email;
+              candidateEmail = a.candidateEmail || a.email || candidateEmail;
               candidateName = a.candidateName || candidateName;
-              jobTitle = a.jobTitle;
+              jobTitle = a.jobTitle || jobTitle;
               return { ...a, stage: "HIRED" };
             }
             return a;

@@ -12,3 +12,5 @@ tenantRoutes.post("/jobs-publish", c.publishJobDirect);
 tenantRoutes.post("/notifications/send-email", c.sendNotificationEmail);
 tenantRoutes.post("/ai-generate-assessment-round", c.aiGenerateAssessmentRound);
 tenantRoutes.post("/ai-evaluate-assignment", c.aiEvaluateAssignment);
+tenantRoutes.post("/proctoring/telemetry", c.recordProctoringTelemetry);
+tenantRoutes.get("/proctoring/telemetry/:candidateId?", c.getProctoringTelemetry);

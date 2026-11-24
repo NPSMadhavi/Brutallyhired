@@ -10,7 +10,7 @@ import { PreJoin, type LocalUserChoices } from "@livekit/components-react";
 import "@livekit/components-styles";
 import type { JoinTokenDto } from "@verity/shared";
 import { clsx } from "clsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { LiveKitRoom } from "./LiveKitRoom";
@@ -33,6 +33,26 @@ export function JoinPage() {
       } catch {}
       return "cmwssnj7e0003vnvsanhlfhqg";
     })();
+
+  const candidateInfo = useMemo(() => {
+    let name = "praveen Nobi";
+    let email = "netopsysai@gmail.com";
+    let jobTitle = "Ai Ml";
+    try {
+      const raw = localStorage.getItem("bh_admin_applications");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const app = parsed.find((a: any) => a.id === appId) || parsed[0];
+          if (app.candidateName) name = app.candidateName;
+          if (app.candidateEmail || app.email) email = app.candidateEmail || app.email;
+          if (app.jobTitle) jobTitle = app.jobTitle;
+        }
+      }
+    } catch {}
+    return { name, email, jobTitle };
+  }, [appId]);
+
   const round = useInterview(tenant.slug, roundId);
   const me = useMe();
   const [choices, setChoices] = useState<LocalUserChoices | null>(null);
@@ -121,27 +141,39 @@ export function JoinPage() {
 
       if (isRound1) {
         await sendEmailNotification({
-          to: "rahul.sharma@example.com",
-          recipientName: "Rahul Sharma",
+          to: candidateInfo.email,
+          recipientName: candidateInfo.name,
           stage: "INTERVIEW",
-          jobTitle: "Software Developer",
+          jobTitle: candidateInfo.jobTitle,
           portalPath: `/${tenant.slug}/applications/${appId}/interviews/round-2`,
           tenantSlug: tenant.slug,
           roundTitle: "Round 2: Live Technical & System Deep-Dive",
           roundNumber: 2,
         });
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new CustomEvent("bh_application_updated", {
+            detail: { appId, roundId: "round-1", status: "COMPLETED" },
+          })
+        );
         navigate(`/${tenant.slug}/applications/${appId}/interviews/round-2`);
       } else if (isRound2) {
         await sendEmailNotification({
-          to: "rahul.sharma@example.com",
-          recipientName: "Rahul Sharma",
+          to: candidateInfo.email,
+          recipientName: candidateInfo.name,
           stage: "INTERVIEW",
-          jobTitle: "Software Developer",
+          jobTitle: candidateInfo.jobTitle,
           portalPath: `/${tenant.slug}/applications/${appId}/interviews/round-3`,
           tenantSlug: tenant.slug,
           roundTitle: "Round 3: Leadership & Product Strategy",
           roundNumber: 3,
         });
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new CustomEvent("bh_application_updated", {
+            detail: { appId, roundId: "round-2", status: "COMPLETED" },
+          })
+        );
         navigate(`/${tenant.slug}/applications/${appId}/interviews/round-3`);
       } else if (isRound3) {
         const rawApps = localStorage.getItem("bh_admin_applications");
@@ -156,14 +188,23 @@ export function JoinPage() {
         }
 
         await sendEmailNotification({
-          to: "rahul.sharma@example.com",
-          recipientName: "Rahul Sharma",
+          to: candidateInfo.email,
+          recipientName: candidateInfo.name,
           stage: "OFFER",
-          jobTitle: "Software Developer",
+          jobTitle: candidateInfo.jobTitle,
           portalPath: `/${tenant.slug}/applications/${appId}/offer`,
           tenantSlug: tenant.slug,
+          customHeading: "Congratulations! You have an official job offer from Brutallyhired",
+          customBody:
+            "Following your outstanding performance across all 3 technical and leadership interview rounds, we are thrilled to formally extend an offer of employment. Please review your terms, compensation package, and sign in the candidate portal.",
         });
 
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new CustomEvent("bh_application_updated", {
+            detail: { appId, stage: "OFFER" },
+          })
+        );
         navigate(`/${tenant.slug}/applications/${appId}/offer`);
       }
     } catch (e) {
@@ -237,12 +278,12 @@ export function JoinPage() {
               />
               {isVideoOff && (
                 <div className="flex flex-col items-center gap-2 text-white">
-                  <Avatar name="Rahul Sharma" size={64} tone="teal" />
+                  <Avatar name={candidateInfo.name} size={64} tone="teal" />
                   <span className="text-xs font-semibold">Camera Paused</span>
                 </div>
               )}
               <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-xs text-white text-xs px-3 py-1 rounded-full font-medium flex items-center gap-2">
-                <span>Rahul Sharma (Candidate)</span>
+                <span>{candidateInfo.name} (Candidate)</span>
                 {isMuted && <span className="text-rose-400 font-bold">Muted</span>}
               </div>
             </div>
@@ -369,7 +410,7 @@ export function JoinPage() {
           <div data-lk-theme="default" className="overflow-hidden rounded-2xl">
             <PreJoin
               defaults={{
-                username: me.data?.displayName ?? "Rahul Sharma",
+                username: me.data?.displayName ?? candidateInfo.name,
                 videoEnabled: true,
                 audioEnabled: true,
               }}

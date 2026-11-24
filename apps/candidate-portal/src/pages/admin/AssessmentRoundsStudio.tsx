@@ -976,7 +976,10 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
     try {
       const res = await fetch(`/api/t/${tenant.slug}/ai-generate-assessment-round`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-verity-csrf": "1",
+        },
         body: JSON.stringify({
           roundType: round.type,
           jobTitle: selectedJob.title,

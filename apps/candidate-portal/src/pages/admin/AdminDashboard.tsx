@@ -689,7 +689,7 @@ export function AdminDashboard() {
     try {
       await fetch(`/api/t/${tenant.slug}/jobs-draft`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
         body: JSON.stringify(draftPayload),
       });
     } catch {
@@ -727,7 +727,7 @@ export function AdminDashboard() {
     try {
       await fetch(`/api/t/${tenant.slug}/jobs-publish`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
         body: JSON.stringify({
           title: newJobTitle.trim(),
           department: newJobDept.trim() || "Technology",
@@ -878,6 +878,40 @@ export function AdminDashboard() {
     }
     return [
       {
+        id: "assess-praveen",
+        candidateId: "cmwssnj7e0003vnvsanhlfhqg",
+        candidateName: "praveen Nobi",
+        jobTitle: "Ai Ml",
+        assessmentTitle: "Technical Assessment (Proctored)",
+        mode: "HIGHER_ASSURANCE",
+        invitedAt: "Today",
+        expiresIn: "48 hours remaining (3-day deadline)",
+        systemTest: {
+          consent: true,
+          webcam: true,
+          screenShare: true,
+          audio: true,
+          networkLatency: "24ms (Verified)",
+        },
+        durationMins: 45,
+        autosaveCheckpoints: 12,
+        status: "FLAGGED_REVIEW",
+        aiSignals: {
+          faceVisibilityPct: 96,
+          extraPersonsCount: 0,
+          phoneDetected: false,
+          monitorCount: 1,
+          focusLossCount: 0,
+          interruptionsCount: 0,
+        },
+        riskScore: 10,
+        riskLevel: "LOW",
+        auditTrail: [
+          { time: "00:00", event: "Identity consent and camera framing pre-check verified", tone: "ok" },
+          { time: "00:02", event: "Hardware Port Monitor engaged on port 4899; single display locked", tone: "info" },
+        ],
+      },
+      {
         id: "assess-1",
         candidateId: "app-101",
         candidateName: "Rahul Sharma",
@@ -1023,6 +1057,32 @@ export function AdminDashboard() {
       },
     ];
   });
+
+  // Real-time synchronization of candidate assessment telemetry & 5-violation reports
+  useEffect(() => {
+    const syncLiveAssessmentSessions = () => {
+      try {
+        const saved = localStorage.getItem("bh_assessment_sessions");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setAssessmentSessions((prev) => {
+              const map = new Map(prev.map((s) => [s.id, s]));
+              parsed.forEach((p: any) => {
+                const existing = map.get(p.id);
+                map.set(p.id, { ...existing, ...p });
+              });
+              return Array.from(map.values());
+            });
+          }
+        }
+      } catch {}
+    };
+
+    syncLiveAssessmentSessions();
+    const interval = setInterval(syncLiveAssessmentSessions, 2500);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleAdjudicate = (
     sessionId: string,
@@ -1193,7 +1253,7 @@ export function AdminDashboard() {
       try {
         const res = await fetch(`/api/admin/applications/${app.id}/approve-assessment`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
         });
         if (res.ok) {
           const data = await res.json();
@@ -2634,11 +2694,11 @@ export function AdminDashboard() {
                                         : "amber"
                                     }
                                   >
-                                    Adjudicated: {session.adjudication}
+                                    {session.adjudication === "FAIL" ? "Disqualified: FAIL" : `Adjudicated: ${session.adjudication}`}
                                   </Pill>
                                 ) : (
-                                  <Pill tone="amber" dot>
-                                    Awaiting Decision
+                                  <Pill tone={session.riskLevel === "HIGH" ? "red" : "amber"} dot>
+                                    {session.riskLevel === "HIGH" ? "Critical Risk / Pending Review" : "In Progress"}
                                   </Pill>
                                 )}
                               </div>
@@ -2654,12 +2714,12 @@ export function AdminDashboard() {
                               <span className="font-semibold text-ink-muted uppercase text-[10px]">AI Risk Score:</span>
                               <span
                                 className={`font-bold px-1.5 py-0.5 rounded-md ${
-                                  session.riskLevel === "HIGH"
+                                  session.riskLevel === "HIGH" || session.riskScore >= 80
                                     ? "bg-rose-100 text-rose-800"
                                     : "bg-emerald-100 text-emerald-800"
                                 }`}
                               >
-                                {session.riskScore}/100 ({session.riskLevel})
+                                {session.riskScore}/100 ({session.riskLevel === "HIGH" || session.riskScore >= 80 ? "HIGH" : "LOW"})
                               </span>
                             </div>
 
@@ -2673,6 +2733,23 @@ export function AdminDashboard() {
                             </Button>
                           </div>
                         </div>
+
+                        {/* 5-Violation Auto-Rejection Banner if triggered */}
+                        {(session.adjudication === "FAIL" || session.riskScore >= 80 || session.auditTrail?.some((a) => a.tone === "danger")) && (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-3.5 py-2 text-xs text-rose-900 flex items-center justify-between">
+                            <span className="flex items-center gap-2 font-bold">
+                              <Shield size={14} className="text-rose-600 shrink-0" />
+                              <span>
+                                {session.adjudication === "FAIL" || session.riskScore >= 80
+                                  ? "Automated Policy Action: 5 Proctoring Violations Recorded — Candidate Disqualified & Rejected"
+                                  : "Proctoring Integrity Warning: Telemetry Incident Alerts Logged"}
+                              </span>
+                            </span>
+                            <span className="font-mono text-[11px] font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded">
+                              Disqualified
+                            </span>
+                          </div>
+                        )}
 
                         {/* AI Signal Breakdown Grid */}
                         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2 border-t border-line/60 text-xs">
@@ -3764,6 +3841,22 @@ export function AdminDashboard() {
                 ))}
               </div>
             </div>
+
+            {/* 5-Violation Auto-Rejection Callout */}
+            {(activeInspectSession.adjudication === "FAIL" ||
+              activeInspectSession.riskScore >= 80 ||
+              activeInspectSession.auditTrail.filter((e) => e.tone === "danger").length >= 5) && (
+              <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 space-y-1">
+                <span className="font-bold text-rose-900 block text-xs flex items-center gap-1.5">
+                  <Shield size={14} className="text-rose-700" />
+                  <span>5 Incident Reports Logged — Candidate Auto-Disqualified</span>
+                </span>
+                <p className="text-rose-800 text-[11px] leading-relaxed">
+                  The candidate exceeded the maximum allowable proctoring anomaly threshold. BrutalAssessAI™ has
+                  terminated their assessment session, updated the application stage to REJECTED, and sealed the audit trail.
+                </p>
+              </div>
+            )}
 
             {/* Adjudication actions inside inspector */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">

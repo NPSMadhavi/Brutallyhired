@@ -578,7 +578,7 @@ export const aiGenerateAssessmentRound = ah(async (req, res) => {
       const qNum = result.length + 1;
       result.push({
         id: `q-mcq-${Date.now()}-${qNum}`,
-        prompt: `[${role}] ${template.prompt}`,
+        prompt: template.prompt,
         options: [...template.options],
         correctOptionIndex: template.correctOptionIndex,
         points: Math.round(100 / count) || 10,
@@ -662,6 +662,12 @@ Respond ONLY with valid JSON in this exact structure:
 
       if (parsed) {
         if (roundType === "TECHNICAL_MCQ" && Array.isArray(parsed.questions)) {
+          // Clean any bracketed role prefixes from prompts
+          parsed.questions.forEach((q: any) => {
+            if (q.prompt && typeof q.prompt === "string") {
+              q.prompt = q.prompt.replace(/^\[.*?\]\s*/, "");
+            }
+          });
           // Guarantee exactly the requested count
           parsed.questions = synthesizeMcqs(parsed.questions);
         }
@@ -833,4 +839,124 @@ Respond ONLY with a valid JSON object matching this schema:
       ],
     },
   });
+});
+
+// In-Memory cache for live candidate proctoring violations & hardware reports
+const PROCTORING_VIOLATION_CACHE: Record<
+  string,
+  {
+    candidateId: string;
+    violationCount: number;
+    isDisqualified: boolean;
+    reports: any[];
+    hardwareSnapshot: any;
+    lastUpdated: string;
+  }
+> = {};
+
+export const recordProctoringTelemetry = ah(async (req, res) => {
+  const {
+    candidateId,
+    eventType,
+    description,
+    severity,
+    evidenceData,
+    violationCount: rawCount,
+    hardwareSnapshot,
+    candidateEmail,
+    candidateName,
+    jobTitle,
+  } = req.body;
+
+  const cId = candidateId || "cmwssnj7e0003vnvsanhlfhqg";
+
+  if (!PROCTORING_VIOLATION_CACHE[cId]) {
+    PROCTORING_VIOLATION_CACHE[cId] = {
+      candidateId: cId,
+      violationCount: 0,
+      isDisqualified: false,
+      reports: [],
+      hardwareSnapshot: hardwareSnapshot || null,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  const state = PROCTORING_VIOLATION_CACHE[cId]!;
+  if (hardwareSnapshot) {
+    state.hardwareSnapshot = hardwareSnapshot;
+  }
+
+  if (eventType) {
+    state.violationCount += 1;
+    const report = {
+      reportId: `rep-${state.violationCount}-${Date.now()}`,
+      incidentNumber: state.violationCount,
+      eventType,
+      description: description || `Proctoring flag: ${eventType}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      severity: severity || (state.violationCount >= 5 ? "CRITICAL" : "HIGH"),
+      evidenceData: evidenceData || {},
+    };
+    state.reports.push(report);
+  } else if (typeof rawCount === "number") {
+    state.violationCount = rawCount;
+  }
+  state.lastUpdated = new Date().toISOString();
+
+  // Enforce 5 Reports Rejection Rule
+  if (state.violationCount >= 5 && !state.isDisqualified) {
+    state.isDisqualified = true;
+
+    // Disqualify candidate application in database
+    try {
+      await prisma.application.updateMany({
+        where: { id: cId },
+        data: { stage: "REJECTED" as any },
+      });
+    } catch {}
+
+    // Send proctoring disqualification notice email
+    const emailTo = candidateEmail || "netopsysai@gmail.com";
+    const nameTo = candidateName || "praveen Nobi";
+    try {
+      const currentTenant = tenantOf(req);
+      await sendTemplate({
+        to: emailTo,
+        template: "offer_rejected" as TemplateKey,
+        tenant: currentTenant,
+        vars: {
+          candidateName: nameTo,
+          jobTitle: jobTitle || "Ai Ml",
+        },
+        path: `/${currentTenant.slug}/applications/${cId}`,
+        subject: "Examination Integrity Disqualification Notice — Brutallyhired",
+        heading: "Assessment Terminated: Integrity Policy Violation",
+        body: `Dear ${nameTo}, your proctored assessment examination has been terminated because 5 critical integrity and hardware proctoring violations were recorded by BrutalAssessAI™ (including unauthorized window changes, port connections, or secondary display events). In accordance with enterprise examination security protocols, your application has been automatically disqualified.`,
+      });
+    } catch (e) {
+      logger.warn({ e }, "Disqualification email sending note");
+    }
+  }
+
+  return res.json({
+    ok: true,
+    isDisqualified: state.isDisqualified,
+    violationCount: state.violationCount,
+    maxAllowed: 5,
+    reports: state.reports,
+    hardwareSnapshot: state.hardwareSnapshot,
+  });
+});
+
+export const getProctoringTelemetry = ah(async (req, res) => {
+  const cId = req.params.candidateId || "cmwssnj7e0003vnvsanhlfhqg";
+  const state = PROCTORING_VIOLATION_CACHE[cId] || {
+    candidateId: cId,
+    violationCount: 0,
+    isDisqualified: false,
+    reports: [],
+    hardwareSnapshot: null,
+    lastUpdated: new Date().toISOString(),
+  };
+  return res.json({ ok: true, data: state });
 });

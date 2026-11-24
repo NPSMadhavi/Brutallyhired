@@ -13,7 +13,7 @@ export interface SentEmailRecord {
   heading: string;
   body: string;
   portalUrl: string;
-  stage: "SHORTLISTED" | "ASSESSMENT" | "INTERVIEW" | "OFFER" | "HIRED";
+  stage: "SHORTLISTED" | "ASSESSMENT" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "ON_HOLD";
   sentAt: string;
   status: "DELIVERED" | "QUEUED";
   attachmentName?: string;
@@ -53,7 +53,7 @@ export async function sendEmailNotification({
 }: {
   to: string;
   recipientName: string;
-  stage: "SHORTLISTED" | "ASSESSMENT" | "INTERVIEW" | "OFFER" | "HIRED";
+  stage: "SHORTLISTED" | "ASSESSMENT" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "ON_HOLD";
   jobTitle: string;
   portalPath: string;
   tenantSlug?: string;
@@ -116,6 +116,22 @@ export async function sendEmailNotification({
         body ||
         `Congratulations! Your signed offer letter has been processed. We could not be more excited to welcome you to Brutallyhired. Next up: Complete your onboarding checklist and get ready for Day 1!`;
       break;
+
+    case "REJECTED":
+      templateKey = "offer_rejected";
+      subject = subject || `Application Update: ${jobTitle} — Brutallyhired`;
+      heading = heading || `Application Status Update`;
+      body =
+        body ||
+        `Thank you for taking the time to participate in our evaluation for ${jobTitle}. Following our assessment audit and security telemetry evaluation, we will not be moving forward with your application. We wish you the best in your career search.`;
+      break;
+
+    case "ON_HOLD":
+      templateKey = "offer_rejected";
+      subject = subject || `Application Status: On Hold for ${jobTitle}`;
+      heading = heading || `Application Update`;
+      body = body || `Your application for ${jobTitle} has been placed on hold for further batch evaluation.`;
+      break;
   }
 
   const record: SentEmailRecord = {
@@ -134,9 +150,12 @@ export async function sendEmailNotification({
 
   // Attempt real backend email dispatch via Nodemailer
   try {
-    await fetch(`/api/t/${tenantSlug}/notifications/send-email`, {
+    const res = await fetch(`/api/t/${tenantSlug}/notifications/send-email`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-verity-csrf": "1",
+      },
       body: JSON.stringify({
         to,
         template: templateKey,
@@ -154,6 +173,10 @@ export async function sendEmailNotification({
         customBody: body,
       }),
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn("Backend email dispatch returned non-200:", res.status, errText);
+    }
   } catch (err) {
     console.warn("Backend email dispatch note:", err);
   }
