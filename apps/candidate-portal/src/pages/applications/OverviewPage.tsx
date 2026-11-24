@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { useMe, useOverview, useWithdraw } from "@/api/hooks";
@@ -129,33 +129,87 @@ export function OverviewPage() {
   const q = useOverview(tenant.slug, appId);
   const withdraw = useWithdraw(tenant.slug, appId);
   const [confirming, setConfirming] = useState(false);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    const onUpdate = () => setVersion((v) => v + 1);
+    window.addEventListener("storage", onUpdate);
+    window.addEventListener("bh_application_updated", onUpdate);
+    return () => {
+      window.removeEventListener("storage", onUpdate);
+      window.removeEventListener("bh_application_updated", onUpdate);
+    };
+  }, []);
+
+  const localDraft = localStorage.getItem(`bh_draft_${appId}`);
+  const localApps = localStorage.getItem("bh_admin_applications");
+  let matchingApp: any = null;
+  if (localApps) {
+    try {
+      const parsed = JSON.parse(localApps);
+      if (Array.isArray(parsed)) {
+        matchingApp = parsed.find(
+          (a: any) =>
+            a.id === appId ||
+            a.reference === appId ||
+            a.externalRef === appId ||
+            (a.email && me.data?.email && a.email.toLowerCase() === me.data.email.toLowerCase()) ||
+            (a.email && a.email.toLowerCase() === "netopsysai@gmail.com") ||
+            (a.candidateName && me.data?.displayName && a.candidateName.toLowerCase() === me.data.displayName.toLowerCase())
+        );
+      }
+    } catch {}
+  }
+
+  let draftParsed: any = {};
+  if (localDraft) {
+    try {
+      draftParsed = JSON.parse(localDraft);
+    } catch {}
+  }
 
   let o = q.data;
-  if (!o) {
-    const localDraft = localStorage.getItem(`bh_draft_${appId}`);
-    const localApps = localStorage.getItem("bh_admin_applications");
-    let matchingApp: any = null;
-    if (localApps) {
-      try {
-        const parsed = JSON.parse(localApps);
-        if (Array.isArray(parsed)) {
-          matchingApp = parsed.find((a: any) => a.id === appId);
-        }
-      } catch {}
+
+  // Determine stage by taking the most advanced stage between API data and local admin storage
+  const stagePriority: Record<string, number> = {
+    DRAFT: 0,
+    SUBMITTED: 1,
+    IN_REVIEW: 2,
+    UNDER_REVIEW: 2,
+    SCREENING_TEST: 3,
+    ASSESSMENT: 3,
+    SHORTLISTED: 4,
+    INTERVIEW: 5,
+    INTERVIEW_SCHEDULE: 5,
+    INTERVIEW_SCHEDULED: 5,
+    OFFER: 6,
+    SELECTED: 6,
+    ONBOARDING: 7,
+    HIRED: 8,
+    REJECTED: 99,
+    NOT_SELECTED: 99,
+    WITHDRAWN: 99,
+  };
+
+  const localStage = matchingApp?.stage || draftParsed.stage || null;
+  let effectiveStage = o?.stage || localStage || "SUBMITTED";
+  if (localStage && stagePriority[localStage] !== undefined) {
+    const apiPriority = stagePriority[o?.stage || "SUBMITTED"] || 1;
+    const locPriority = stagePriority[localStage] || 1;
+    if (locPriority > apiPriority) {
+      effectiveStage = localStage;
     }
+  }
+
+  if (!o) {
     if (localDraft || matchingApp) {
-      let draftParsed: any = {};
-      try {
-        if (localDraft) draftParsed = JSON.parse(localDraft);
-      } catch {}
-      const stage = matchingApp?.stage || draftParsed.stage || "SUBMITTED";
       o = {
         id: appId,
-        reference: draftParsed.reference || `APP-${appId.slice(-6)}`,
-        stage,
-        closed: stage === "REJECTED" || stage === "NOT_SELECTED" || stage === "WITHDRAWN",
-        job: draftParsed.job || { title: matchingApp?.jobTitle || "Software Developer", location: "Hybrid" },
-        submittedAt: new Date().toISOString(),
+        reference: matchingApp?.reference || draftParsed.reference || `APP-${appId.slice(-6)}`,
+        stage: effectiveStage,
+        closed: effectiveStage === "REJECTED" || effectiveStage === "NOT_SELECTED" || effectiveStage === "WITHDRAWN",
+        job: draftParsed.job || { title: matchingApp?.jobTitle || "Software Developer", location: "Hybrid / Flexible" },
+        submittedAt: matchingApp?.submittedAt || draftParsed.submittedAt || new Date().toISOString(),
         events: [
           {
             id: `ev-${appId}-sub`,
@@ -163,66 +217,61 @@ export function OverviewPage() {
             createdAt: draftParsed.submittedAt || new Date().toISOString(),
             data: { jobTitle: matchingApp?.jobTitle || "Software Developer" },
           },
-          ...(stage !== "SUBMITTED"
-            ? [
-                {
-                  id: `ev-${appId}-stage`,
-                  type:
-                    stage === "SHORTLISTED" || stage === "ASSESSMENT"
-                      ? "assessment_invited"
-                      : stage === "INTERVIEW"
-                      ? "interview_invited"
-                      : stage === "OFFER"
-                      ? "offer_sent"
-                      : stage === "HIRED"
-                      ? "hired"
-                      : "review_started",
-                  createdAt: new Date().toISOString(),
-                  data: { jobTitle: matchingApp?.jobTitle || "Software Developer" },
-                },
-              ]
-            : []),
         ],
-        track: buildCandidateJourneyTrack(stage, draftParsed.submittedAt || matchingApp?.submittedAt),
-        nextAction:
-          stage === "WITHDRAWN"
-            ? { type: "CLOSED", reason: "WITHDRAWN" }
-            : stage === "REJECTED" || stage === "NOT_SELECTED"
-            ? { type: "CLOSED", reason: "NOT_SELECTED" }
-            : stage === "SCREENING_TEST" || stage === "ASSESSMENT"
-            ? {
-                type: "TAKE_ASSESSMENT",
-                title: "Screening Test",
-                dueAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
-                durationMinutes: 30,
-                inviteId: appId,
-              }
-            : stage === "SHORTLISTED"
-            ? {
-                type: "AWAIT_DECISION",
-              }
-            : stage === "INTERVIEW" || stage === "INTERVIEW_SCHEDULE" || stage === "INTERVIEW_SCHEDULED"
-            ? {
-                type: "ATTEND_INTERVIEW",
-                title: "Interview Schedule (Round 1, Round 2, Round 3)",
-                startsAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-                endsAt: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
-                roundId: appId,
-              }
-            : stage === "OFFER" || stage === "SELECTED"
-            ? {
-                type: "RESPOND_TO_OFFER",
-                respondBy: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-              }
-            : stage === "ONBOARDING" || stage === "HIRED"
-            ? {
-                type: "COMPLETE_ONBOARDING",
-                pending: 2,
-                startDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
-              }
-            : { type: "AWAIT_REVIEW" },
+        track: buildCandidateJourneyTrack(effectiveStage, draftParsed.submittedAt || matchingApp?.submittedAt),
+        nextAction: null as any,
       } as any;
     }
+  }
+
+  // If application exists, synchronize its stage and computed nextAction
+  if (o) {
+    o.stage = effectiveStage as any;
+    o.track = buildCandidateJourneyTrack(effectiveStage, o.submittedAt) as any;
+    o.nextAction = (
+      effectiveStage === "WITHDRAWN"
+        ? { type: "CLOSED", reason: "WITHDRAWN" }
+        : effectiveStage === "REJECTED" || effectiveStage === "NOT_SELECTED"
+        ? { type: "CLOSED", reason: "NOT_SELECTED" }
+        : effectiveStage === "SCREENING_TEST" || effectiveStage === "ASSESSMENT"
+        ? {
+            type: "TAKE_ASSESSMENT",
+            title: "Round 1 Proctored Technical Assessment Ready",
+            dueAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+            durationMinutes: 45,
+            inviteId: appId,
+            path: `/${tenant.slug}/applications/${appId}/assessments/assess-1`,
+            label: "Start Proctored Assessment Now →",
+          }
+        : effectiveStage === "SHORTLISTED"
+        ? {
+            type: "AWAIT_DECISION",
+            title: "Shortlisted for Interviews",
+          }
+        : effectiveStage === "INTERVIEW" || effectiveStage === "INTERVIEW_SCHEDULE" || effectiveStage === "INTERVIEW_SCHEDULED"
+        ? {
+            type: "ATTEND_INTERVIEW",
+            title: "3-Round Practical Evaluation & Interview Schedule",
+            startsAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+            endsAt: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
+            path: `/${tenant.slug}/applications/${appId}/interviews`,
+            label: "Proceed to 3-Round Interview Process →",
+          }
+        : effectiveStage === "OFFER" || effectiveStage === "SELECTED"
+        ? {
+            type: "RESPOND_TO_OFFER",
+            respondBy: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+            path: `/${tenant.slug}/applications/${appId}/offer`,
+            label: "Review Formal Job Offer & Sign →",
+          }
+        : effectiveStage === "ONBOARDING" || effectiveStage === "HIRED"
+        ? {
+            type: "COMPLETE_ONBOARDING",
+            pending: 2,
+            startDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
+          }
+        : { type: "AWAIT_REVIEW" }
+    ) as any;
   }
 
   if (q.isPending && !o) return <PageLoader />;

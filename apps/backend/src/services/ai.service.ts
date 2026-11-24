@@ -7,7 +7,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 function cleanJsonText(raw: string): string {
   let s = raw.trim();
   const fenceMatch = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenceMatch) return fenceMatch[1].trim();
+  if (fenceMatch && fenceMatch[1]) return fenceMatch[1].trim();
   if (s.startsWith("```")) {
     s = s.replace(/^```(?:json)?\s*/i, "");
     s = s.replace(/\s*```$/, "");

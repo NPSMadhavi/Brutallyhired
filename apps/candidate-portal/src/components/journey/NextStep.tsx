@@ -61,12 +61,14 @@ export function useNextStep(action: NextAction | null | undefined, base: string,
       break;
     case "TAKE_ASSESSMENT":
     case "ASSESSMENT":
-      title = t("next.TAKE_ASSESSMENT.title", { title: (action as any).title || "Screening Test" });
-      body = (action as any).dueAt
-        ? t("next.TAKE_ASSESSMENT.body", { minutes: (action as any).durationMinutes || 30, due: f.dateTime((action as any).dueAt) })
-        : "Complete the screening test evaluation once you are ready.";
+      title = (action as any).title || t("next.TAKE_ASSESSMENT.title", { title: "Screening Test" });
+      body =
+        (action as any).body ||
+        ((action as any).dueAt
+          ? t("next.TAKE_ASSESSMENT.body", { minutes: (action as any).durationMinutes || 45, due: f.dateTime((action as any).dueAt) })
+          : "Your secure examination has been approved by HR. Access your proctored assessment test before the deadline.");
       cta = {
-        to: (action as any).path || `${base}/assessments/${(action as any).inviteId || ""}`,
+        to: (action as any).path || `${base}/assessments/${(action as any).inviteId || "assess-1"}`,
         label: (action as any).label || t("next.TAKE_ASSESSMENT.cta"),
       };
       icon = <Clipboard />;
@@ -81,7 +83,11 @@ export function useNextStep(action: NextAction | null | undefined, base: string,
         ? `Interview scheduled: ${f.longDate((action as any).startsAt)} · ${f.timeRange((action as any).startsAt, (action as any).endsAt)}`
         : "Your interview schedule is active for Round 1, Round 2, and Round 3. Access your video rounds and interview schedule.";
       cta = {
-        to: (action as any).path || `${base}/interviews/${(action as any).roundId || ""}`,
+        to:
+          (action as any).path ||
+          ((action as any).roundId && (action as any).roundId !== "appId"
+            ? `${base}/interviews/${(action as any).roundId}`
+            : `${base}/interviews`),
         label: (action as any).label || "View Interview Schedule",
       };
       icon = <Calendar />;

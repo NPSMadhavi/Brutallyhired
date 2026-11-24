@@ -11,3 +11,4 @@ tenantRoutes.post("/jobs-draft", c.saveJobDraft);
 tenantRoutes.post("/jobs-publish", c.publishJobDirect);
 tenantRoutes.post("/notifications/send-email", c.sendNotificationEmail);
 tenantRoutes.post("/ai-generate-assessment-round", c.aiGenerateAssessmentRound);
+tenantRoutes.post("/ai-evaluate-assignment", c.aiEvaluateAssignment);

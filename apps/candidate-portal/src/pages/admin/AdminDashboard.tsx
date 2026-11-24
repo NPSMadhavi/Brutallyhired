@@ -1121,6 +1121,8 @@ export function AdminDashboard() {
     const updated = applications.map((a) => (a.id === app.id ? { ...a, stage: targetStage } : a));
     setApplications(updated);
     localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+    window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: targetStage, appId: app.id } }));
     if (activeReviewApp && activeReviewApp.id === app.id) {
       setActiveReviewApp((prev) => (prev ? { ...prev, stage: targetStage } : null));
     }
@@ -1229,6 +1231,8 @@ export function AdminDashboard() {
       );
       setApplications(updated);
       localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: "ASSESSMENT", appId: app.id } }));
 
       if (activeReviewApp && activeReviewApp.id === app.id) {
         setActiveReviewApp((prev) =>
