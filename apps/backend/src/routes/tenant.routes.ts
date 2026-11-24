@@ -12,3 +12,10 @@ tenantRoutes.post("/jobs-publish", c.publishJobDirect);
 tenantRoutes.post("/notifications/send-email", c.sendNotificationEmail);
 tenantRoutes.post("/ai-generate-assessment-round", c.aiGenerateAssessmentRound);
 tenantRoutes.post("/ai-evaluate-assignment", c.aiEvaluateAssignment);
+
+// Interview Slots Management
+tenantRoutes.get("/interview-slots", c.getInterviewSlots);
+tenantRoutes.post("/interview-slots", c.saveInterviewSlots);
+tenantRoutes.post("/interview-slots/reschedule", c.rescheduleInterviewSlot);
+tenantRoutes.post("/interview-slots/cancel", c.cancelInterviewSlot);
+tenantRoutes.post("/interview-slots/complete", c.completeInterviewSlot);

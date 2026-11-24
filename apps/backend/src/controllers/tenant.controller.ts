@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { prisma } from "@verity/db";
 import type { RequestHandler } from "express";
 import { env, aiEnabled } from "../config/env.js";
@@ -833,4 +835,395 @@ Respond ONLY with a valid JSON object matching this schema:
       ],
     },
   });
+});
+
+// ── Interview Slots Management & Persistence ───────────────────────────
+
+function getTenantSlotsFilePath(tenantSlug: string): string {
+  const baseDir = path.resolve(process.cwd(), "storage", "tenants", tenantSlug);
+  return path.join(baseDir, "interview-slots.json");
+}
+
+export const getInterviewSlots = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+    if (Array.isArray(slots) && slots.length > 0) {
+      return res.json({ ok: true, slots, source: "database_storage" });
+    }
+  } catch {
+    // File doesn't exist yet, query database for scheduled rounds/slots
+  }
+
+  try {
+    const rounds = await prisma.interviewRound.findMany({
+      where: {
+        application: { tenantId: tenant.id },
+      },
+      include: {
+        panelists: true,
+        slots: true,
+        application: { include: { user: true, job: true } },
+      },
+      orderBy: { scheduledStart: "asc" },
+    });
+
+    const slots = rounds.flatMap((r) => {
+      const interviewer = r.panelists[0]?.name || "Tanuja HR";
+      const candidateName = r.application.user.displayName || r.application.user.email;
+      const candidateEmail = r.application.user.email;
+      const jobTitle = r.application.job.title;
+
+      return r.slots.map((s, idx) => {
+        const start = s.startsAt ? new Date(s.startsAt) : new Date();
+        const end = s.endsAt ? new Date(s.endsAt) : new Date(start.getTime() + (r.durationMinutes || 60) * 60000);
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const dateStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+        const startTimeStr = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+        const endTimeStr = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+
+        return {
+          id: s.id || `slot-${r.id}-${idx}`,
+          jobId: r.application.jobId,
+          jobTitle,
+          roundNumber: r.sequence,
+          roundName: r.title,
+          date: dateStr,
+          startTime: startTimeStr,
+          endTime: endTimeStr,
+          durationMinutes: r.durationMinutes || 60,
+          interviewerName: interviewer,
+          interviewerEmail: "hr@brutallyhired.com",
+          mode: "LIVEKIT_VIDEO",
+          status: r.status === "COMPLETED" ? "COMPLETED" : s.bookedAt || r.status === "SCHEDULED" ? "BOOKED" : "AVAILABLE",
+          bookedCandidateId: r.applicationId,
+          bookedCandidateName: candidateName,
+          bookedCandidateEmail: candidateEmail,
+          meetingLink: `https://meet.livekit.io/bh-room-${r.id}`,
+          createdAt: r.createdAt.toISOString(),
+        };
+      });
+    });
+
+    return res.json({ ok: true, slots, source: "prisma_rounds" });
+  } catch (err) {
+    logger.warn({ err }, "Database query for interview slots");
+    return res.json({ ok: true, slots: [], source: "empty" });
+  }
+});
+
+export const saveInterviewSlots = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const { slots } = req.body;
+
+  if (!Array.isArray(slots)) {
+    return res.status(400).json({ error: "Expected 'slots' array in request body." });
+  }
+
+  // Persist to tenant file storage
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+  try {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(slots, null, 2), "utf-8");
+  } catch (fileErr) {
+    logger.warn({ fileErr }, "File storage save for interview slots");
+  }
+
+  // Synchronize booked slots with relational database (Prisma InterviewRound and InterviewSlot)
+  try {
+    for (const slot of slots) {
+      if (slot.status === "BOOKED" && (slot.bookedCandidateId || slot.bookedCandidateEmail)) {
+        const app = await prisma.application.findFirst({
+          where: {
+            tenantId: tenant.id,
+            OR: [
+              ...(slot.bookedCandidateId ? [{ id: slot.bookedCandidateId }] : []),
+              ...(slot.bookedCandidateEmail ? [{ user: { email: slot.bookedCandidateEmail.toLowerCase().trim() } }] : []),
+            ],
+          },
+        });
+
+        if (app) {
+          const [sH = 10, sM = 0] = String(slot.startTime || "10:00").split(":").map(Number);
+          const [eH = 11, eM = 0] = String(slot.endTime || "11:00").split(":").map(Number);
+          const [y = 2026, m = 11, d = 25] = String(slot.date || "2026-11-25").split("-").map(Number);
+
+          const startsAt = new Date(Date.UTC(y, m - 1, d, sH, sM));
+          const endsAt = new Date(Date.UTC(y, m - 1, d, eH, eM));
+
+          let round = await prisma.interviewRound.findFirst({
+            where: { applicationId: app.id, sequence: slot.roundNumber || 1 },
+          });
+
+          if (round) {
+            await prisma.interviewRound.update({
+              where: { id: round.id },
+              data: {
+                status: slot.status === "COMPLETED" ? "COMPLETED" : "SCHEDULED",
+                scheduledStart: startsAt,
+                scheduledEnd: endsAt,
+                title: slot.roundName || round.title,
+              },
+            });
+          } else {
+            round = await prisma.interviewRound.create({
+              data: {
+                applicationId: app.id,
+                sequence: slot.roundNumber || 1,
+                title: slot.roundName || `Round ${slot.roundNumber || 1}: Evaluation`,
+                durationMinutes: slot.durationMinutes || 60,
+                status: slot.status === "COMPLETED" ? "COMPLETED" : "SCHEDULED",
+                scheduledStart: startsAt,
+                scheduledEnd: endsAt,
+                roomName: `iv_${slot.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 16)}`,
+                panelists: {
+                  create: [{ name: slot.interviewerName || "Tanuja HR", title: "Interviewer Host" }],
+                },
+              },
+            });
+          }
+
+          // Advance application stage to INTERVIEW
+          await prisma.application.update({
+            where: { id: app.id },
+            data: { stage: "INTERVIEW" },
+          });
+        }
+      }
+    }
+  } catch (dbErr) {
+    logger.warn({ dbErr }, "Database synchronization for interview slots");
+  }
+
+  return res.json({ ok: true, count: slots.length, message: "Interview slots saved and synchronized." });
+});
+
+export const rescheduleInterviewSlot = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const { slotId, newDate, newStartTime, newEndTime, reason, candidateEmail, candidateName, jobTitle, roundName, meetingLink, interviewerName } = req.body;
+
+  if (!slotId || !newDate || !newStartTime || !newEndTime) {
+    return res.status(400).json({ error: "Missing required reschedule parameters." });
+  }
+
+  // Update in file storage
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+  let updatedSlot: any = null;
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+    const idx = slots.findIndex((s: any) => s.id === slotId);
+    if (idx !== -1) {
+      slots[idx] = {
+        ...slots[idx],
+        date: newDate,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        status: "BOOKED",
+      };
+      updatedSlot = slots[idx];
+      await fs.writeFile(filePath, JSON.stringify(slots, null, 2), "utf-8");
+    }
+  } catch (fileErr) {
+    logger.warn({ fileErr }, "Reschedule file storage update note");
+  }
+
+  // Update in database if candidate email/app exists
+  if (candidateEmail) {
+    try {
+      const app = await prisma.application.findFirst({
+        where: { tenantId: tenant.id, user: { email: candidateEmail.toLowerCase().trim() } },
+        include: { user: true },
+      });
+
+      if (app) {
+        const [sH, sM] = newStartTime.split(":").map(Number);
+        const [eH, eM] = newEndTime.split(":").map(Number);
+        const [y, m, d] = newDate.split("-").map(Number);
+        const startsAt = new Date(Date.UTC(y, m - 1, d, sH, sM));
+        const endsAt = new Date(Date.UTC(y, m - 1, d, eH, eM));
+
+        await prisma.interviewRound.updateMany({
+          where: { applicationId: app.id, status: { not: "CANCELLED" } },
+          data: { scheduledStart: startsAt, scheduledEnd: endsAt, status: "SCHEDULED" },
+        });
+
+        await prisma.applicationEvent.create({
+          data: {
+            applicationId: app.id,
+            type: "interview_rescheduled",
+            visibility: "PUBLIC",
+            data: { newDate, newStartTime, newEndTime, reason: reason || "Schedule updated by hiring team" },
+          },
+        });
+      }
+    } catch (dbErr) {
+      logger.warn({ dbErr }, "Database reschedule update note");
+    }
+
+    // Send automatic rescheduling email to candidate
+    try {
+      await sendTemplate({
+        to: candidateEmail,
+        template: "interview_invited" as TemplateKey,
+        tenant,
+        vars: {
+          jobTitle: jobTitle || "Software Developer",
+          roundTitle: roundName || "Interview Round",
+          dueAt: `${newDate} at ${newStartTime}`,
+        },
+        path: `/${tenant.slug}/interviews`,
+        subject: `Rescheduled: Interview for ${jobTitle || "Role"} (${roundName || "Round"})`,
+        heading: `Your Interview Has Been Rescheduled`,
+        body: `Your interview session for ${jobTitle || "the position"} (${roundName || "Evaluation Round"}) has been rescheduled to ${newDate} from ${newStartTime} to ${newEndTime}.${reason ? ` Reason: ${reason}.` : ""} Interviewer: ${interviewerName || "Interview Panel"}. Meeting Link: ${meetingLink || "Please access your candidate portal."}`,
+      });
+    } catch (emailErr) {
+      logger.warn({ emailErr }, "Reschedule email dispatch note");
+    }
+  }
+
+  return res.json({ ok: true, slotId, newDate, newStartTime, newEndTime, updatedSlot });
+});
+
+export const cancelInterviewSlot = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const { slotId, reason, releaseSlot, candidateEmail, candidateName, jobTitle, roundName } = req.body;
+
+  if (!slotId) {
+    return res.status(400).json({ error: "Missing required slotId parameter." });
+  }
+
+  // Update in file storage
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+    const idx = slots.findIndex((s: any) => s.id === slotId);
+    if (idx !== -1) {
+      if (releaseSlot) {
+        slots[idx] = {
+          ...slots[idx],
+          status: "AVAILABLE",
+          bookedCandidateId: undefined,
+          bookedCandidateName: undefined,
+          bookedCandidateEmail: undefined,
+        };
+      } else {
+        slots[idx] = {
+          ...slots[idx],
+          status: "CANCELLED",
+        };
+      }
+      await fs.writeFile(filePath, JSON.stringify(slots, null, 2), "utf-8");
+    }
+  } catch (fileErr) {
+    logger.warn({ fileErr }, "Cancel slot file storage update note");
+  }
+
+  // Update in database if candidate email exists
+  if (candidateEmail) {
+    try {
+      const app = await prisma.application.findFirst({
+        where: { tenantId: tenant.id, user: { email: candidateEmail.toLowerCase().trim() } },
+      });
+
+      if (app) {
+        await prisma.interviewRound.updateMany({
+          where: { applicationId: app.id, status: { not: "COMPLETED" } },
+          data: { status: "CANCELLED" },
+        });
+
+        await prisma.applicationEvent.create({
+          data: {
+            applicationId: app.id,
+            type: "interview_cancelled",
+            visibility: "PUBLIC",
+            data: { reason: reason || "Cancelled by recruitment team" },
+          },
+        });
+      }
+    } catch (dbErr) {
+      logger.warn({ dbErr }, "Database cancel interview update note");
+    }
+
+    // Send automatic cancellation email to candidate
+    try {
+      await sendTemplate({
+        to: candidateEmail,
+        template: "interview_invited" as TemplateKey,
+        tenant,
+        vars: {
+          jobTitle: jobTitle || "Software Developer",
+          roundTitle: roundName || "Interview Round",
+        },
+        path: `/${tenant.slug}/interviews`,
+        subject: `Cancelled: Interview for ${jobTitle || "Role"} (${roundName || "Round"})`,
+        heading: `Interview Cancellation Notice`,
+        body: `We are writing to inform you that your scheduled interview for ${jobTitle || "the position"} (${roundName || "Round"}) has been cancelled.${reason ? ` Reason: ${reason}.` : ""} Our recruiting team will follow up with you regarding next steps.`,
+      });
+    } catch (emailErr) {
+      logger.warn({ emailErr }, "Cancel email dispatch note");
+    }
+  }
+
+  return res.json({ ok: true, slotId, cancelled: true });
+});
+
+export const completeInterviewSlot = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const { slotId, notes, candidateEmail, roundName, jobTitle } = req.body;
+
+  if (!slotId) {
+    return res.status(400).json({ error: "Missing required slotId parameter." });
+  }
+
+  // Update in file storage
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+    const idx = slots.findIndex((s: any) => s.id === slotId);
+    if (idx !== -1) {
+      slots[idx] = {
+        ...slots[idx],
+        status: "COMPLETED",
+        notes: notes || slots[idx].notes,
+      };
+      await fs.writeFile(filePath, JSON.stringify(slots, null, 2), "utf-8");
+    }
+  } catch (fileErr) {
+    logger.warn({ fileErr }, "Complete slot file storage update note");
+  }
+
+  // Update in database
+  if (candidateEmail) {
+    try {
+      const app = await prisma.application.findFirst({
+        where: { tenantId: tenant.id, user: { email: candidateEmail.toLowerCase().trim() } },
+      });
+
+      if (app) {
+        await prisma.interviewRound.updateMany({
+          where: { applicationId: app.id, status: { not: "CANCELLED" } },
+          data: { status: "COMPLETED" },
+        });
+
+        await prisma.applicationEvent.create({
+          data: {
+            applicationId: app.id,
+            type: "interview_completed",
+            visibility: "INTERNAL",
+            data: { notes: notes || "Interview successfully completed" },
+          },
+        });
+      }
+    } catch (dbErr) {
+      logger.warn({ dbErr }, "Database complete interview update note");
+    }
+  }
+
+  return res.json({ ok: true, slotId, completed: true });
 });
