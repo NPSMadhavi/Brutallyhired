@@ -1,3 +1,6 @@
+
+import fs from "node:fs/promises";
+import path from "node:path";
 import { prisma } from "@verity/db";
 import type { RequestHandler } from "express";
 import { env, aiEnabled } from "../config/env.js";
@@ -18,14 +21,21 @@ export const getTenant: RequestHandler = (req, res) => {
 export const getJob = ah(async (req, res) => {
   const tenant = tenantOf(req);
   const ref = req.params.ref || "software-developer";
+
   let job = await prisma.job.findFirst({
-    where: { tenantId: tenant.id, status: "OPEN", OR: [{ externalRef: ref }, { id: ref }] },
+    where: {
+      tenantId: tenant.id,
+      status: "OPEN",
+      OR: [{ externalRef: ref }, { id: ref }],
+    },
     include: { questions: true },
   });
+
   if (!job) {
     const rawTitle = ref
       .replace(/-/g, " ")
       .replace(/\b\w/g, (l) => l.toUpperCase());
+
     job = await prisma.job.create({
       data: {
         tenantId: tenant.id,
@@ -41,32 +51,46 @@ export const getJob = ah(async (req, res) => {
       include: { questions: true },
     });
   }
+
   res.json(jobPublic(job));
 });
 
 export const sendNotificationEmail = ah(async (req, res) => {
   const tenant = tenantOf(req);
-  const { to, template, vars, path, customSubject, customHeading, customBody } = req.body;
+  const {
+    to,
+    template,
+    vars,
+    path,
+    customSubject,
+    customHeading,
+    customBody,
+  } = req.body;
+
   if (!to) {
-    return res.status(400).json({ error: "Missing 'to' recipient email." });
+    return res.status(400).json({
+      error: "Missing 'to' recipient email.",
+    });
   }
 
-  // If this email is for an assessment or interview invitation, ensure the application in DB is also updated
+  // Update application stage for assessment, interview and offer notifications.
   try {
     const targetStage =
       template === "assessment_invited"
         ? "ASSESSMENT"
         : template === "interview_invited"
-        ? "INTERVIEW"
-        : template === "offer_sent"
-        ? "OFFER"
-        : null;
+          ? "INTERVIEW"
+          : template === "offer_sent"
+            ? "OFFER"
+            : null;
 
     if (targetStage) {
       await prisma.application.updateMany({
         where: {
           tenantId: tenant.id,
-          user: { email: to.toLowerCase().trim() },
+          user: {
+            email: to.toLowerCase().trim(),
+          },
         },
         data: {
           stage: targetStage as any,
@@ -74,7 +98,10 @@ export const sendNotificationEmail = ah(async (req, res) => {
       });
     }
   } catch (dbErr) {
-    logger.warn({ dbErr }, "Application stage DB update note during email send");
+    logger.warn(
+      { dbErr },
+      "Application stage DB update note during email send",
+    );
   }
 
   try {
@@ -88,25 +115,55 @@ export const sendNotificationEmail = ah(async (req, res) => {
       heading: customHeading,
       body: customBody,
     });
-    res.json({ ok: true, sentTo: to, template, path });
+
+    res.json({
+      ok: true,
+      sentTo: to,
+      template,
+      path,
+    });
   } catch (err: any) {
     logger.warn({ err }, "Email notification delivery warning");
-    res.json({ ok: true, sentTo: to, template, path, note: "Queued or logged" });
+
+    res.json({
+      ok: true,
+      sentTo: to,
+      template,
+      path,
+      note: "Queued or logged",
+    });
   }
 });
 
 export const saveJobDraft = ah(async (req, res) => {
   const tenant = tenantOf(req);
-  const { title, department, location, experience, workplaceType, keywords, publishedChannels, description } = req.body;
+
+  const {
+    title,
+    department,
+    location,
+    experience,
+    workplaceType,
+    keywords,
+    publishedChannels,
+    description,
+  } = req.body;
 
   let draft = await prisma.job.findFirst({
-    where: { tenantId: tenant.id, status: "DRAFT" },
-    orderBy: { updatedAt: "desc" },
+    where: {
+      tenantId: tenant.id,
+      status: "DRAFT",
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
   });
 
   if (draft) {
     draft = await prisma.job.update({
-      where: { id: draft.id },
+      where: {
+        id: draft.id,
+      },
       data: {
         title: title || draft.title,
         department: department || draft.department,
@@ -132,40 +189,78 @@ export const saveJobDraft = ah(async (req, res) => {
       },
     });
   }
-  res.json({ ok: true, draft, savedAt: new Date().toISOString() });
+
+  res.json({
+    ok: true,
+    draft,
+    savedAt: new Date().toISOString(),
+  });
 });
 
 export const getJobDraft = ah(async (req, res) => {
   const tenant = tenantOf(req);
+
   const draft = await prisma.job.findFirst({
-    where: { tenantId: tenant.id, status: "DRAFT" },
-    orderBy: { updatedAt: "desc" },
+    where: {
+      tenantId: tenant.id,
+      status: "DRAFT",
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
   });
+
   res.json({ draft });
 });
 
 export const publishJobDirect = ah(async (req, res) => {
   const tenant = tenantOf(req);
-  const { title, department, location, experience, workplaceType, keywords, publishedChannels, description } = req.body;
-  if (!title || !description) {
-    return res.status(400).json({ error: "Missing required title or description." });
-  }
-  const cleanTitle = (title as string).trim();
-  const externalRef =
-    cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `job-${Date.now()}`;
 
-  // Clean up any existing draft
+  const {
+    title,
+    department,
+    location,
+    experience,
+    workplaceType,
+    keywords,
+    publishedChannels,
+    description,
+  } = req.body;
+
+  if (!title || !description) {
+    return res.status(400).json({
+      error: "Missing required title or description.",
+    });
+  }
+
+  const cleanTitle = (title as string).trim();
+
+  const externalRef =
+    cleanTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || `job-${Date.now()}`;
+
+  // Clean up any existing draft.
   await prisma.job.deleteMany({
-    where: { tenantId: tenant.id, status: "DRAFT" },
+    where: {
+      tenantId: tenant.id,
+      status: "DRAFT",
+    },
   });
 
   let job = await prisma.job.findFirst({
-    where: { tenantId: tenant.id, externalRef },
+    where: {
+      tenantId: tenant.id,
+      externalRef,
+    },
   });
 
   if (job) {
     job = await prisma.job.update({
-      where: { id: job.id },
+      where: {
+        id: job.id,
+      },
       data: {
         title: cleanTitle,
         department: department || "Technology",
@@ -173,7 +268,7 @@ export const publishJobDirect = ah(async (req, res) => {
         employmentType: "Full-time",
         experienceText: experience || null,
         workplaceType: workplaceType || "HYBRID",
-        summary: description, // Final edited JD saved to database!
+        summary: description,
         status: "OPEN",
       },
     });
@@ -188,16 +283,19 @@ export const publishJobDirect = ah(async (req, res) => {
         employmentType: "Full-time",
         experienceText: experience || null,
         workplaceType: workplaceType || "HYBRID",
-        summary: description, // Final edited JD saved to database!
+        summary: description,
         status: "OPEN",
       },
     });
   }
 
-  res.json({ ok: true, job });
+  res.json({
+    ok: true,
+    job,
+  });
 });
 
-// Comprehensive pool of realistic technical assessment questions
+// Comprehensive pool of realistic technical assessment questions.
 const TECHNICAL_QUESTION_BANK = [
   {
     topic: "Architecture & Memory",
@@ -562,20 +660,35 @@ const TECHNICAL_QUESTION_BANK = [
 ];
 
 export const aiGenerateAssessmentRound = ah(async (req, res) => {
-  const { roundType, jobTitle, jobDescription, candidateName, candidateResume, questionCount, difficulty } = req.body;
+  const {
+    roundType,
+    jobTitle,
+    jobDescription,
+    candidateName,
+    candidateResume,
+    questionCount,
+    difficulty,
+  } = req.body;
+
   const count = Math.max(1, Math.min(100, Number(questionCount) || 5));
   const diff = String(difficulty || "MEDIUM").toUpperCase();
   const role = (jobTitle || "Software Developer").trim();
   const jd = (jobDescription || "").slice(0, 3000);
   const resume = (candidateResume || "").slice(0, 3000);
 
-  // Helper to build synthesis list of length = count
+  // Helper to build synthesis list of requested length.
   const synthesizeMcqs = (baseQuestions: any[] = []): any[] => {
     const result = [...baseQuestions];
     let poolIndex = 0;
+
     while (result.length < count) {
-      const template = TECHNICAL_QUESTION_BANK[poolIndex % TECHNICAL_QUESTION_BANK.length]!;
+      const template =
+        TECHNICAL_QUESTION_BANK[
+        poolIndex % TECHNICAL_QUESTION_BANK.length
+        ]!;
+
       const qNum = result.length + 1;
+
       result.push({
         id: `q-mcq-${Date.now()}-${qNum}`,
         prompt: template.prompt,
@@ -585,16 +698,18 @@ export const aiGenerateAssessmentRound = ah(async (req, res) => {
         category: template.topic,
         difficulty: template.difficulty,
       });
+
       poolIndex++;
     }
+
     return result.slice(0, count);
   };
 
   if (aiEnabled && env.AI_BASE_URL) {
     try {
       let prompt = "";
+
       if (roundType === "TECHNICAL_MCQ") {
-        // When asking for a high number like 30, generate in AI or synthesize seamlessly
         prompt = `You are an expert technical assessment creator for Brutallyhired HRMS.
 Analyze this Job Description and Candidate Resume, and generate targeted Technical Multiple Choice Questions (MCQs).
 Job Title: ${role}
@@ -634,17 +749,24 @@ Respond ONLY with valid JSON in this exact structure:
   }
 }`;
       } else {
-        // MANAGERIAL: Do not generate questions for this round. HR creates a LiveKit video call room.
-        const roomSlug = `bh-manager-${role.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-r3`;
+        // Managerial: create a LiveKit video call room instead of questions.
+        const roomSlug = `bh-manager-${role
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .slice(0, 15)}-r3`;
+
         return res.json({
           ok: true,
           source: "LIVEKIT_ENGINE",
           data: {
             isLivekitRound: true,
-            message: "Manager round is a live video interview room powered by LiveKit RTC. No static questions are generated.",
+            message:
+              "Manager round is a live video interview room powered by LiveKit RTC. No static questions are generated.",
             livekitRoom: {
               roomName: roomSlug,
-              roomUrl: `https://meet.livekit.io/${roomSlug}-${Math.random().toString(36).slice(2, 7)}`,
+              roomUrl: `https://meet.livekit.io/${roomSlug}-${Math.random()
+                .toString(36)
+                .slice(2, 7)}`,
               interviewerName: "Tanuja HR & Engineering Manager",
               interviewerEmail: "hr@brutallyhired.com",
               status: "READY",
@@ -655,48 +777,92 @@ Respond ONLY with valid JSON in this exact structure:
 
       const parsed = await callAiJson<any>({
         message: prompt,
-        systemPrompt: "You are an AI assessment engine that outputs strict, valid JSON only.",
+        systemPrompt:
+          "You are an AI assessment engine that outputs strict, valid JSON only.",
         temperature: 0.2,
         timeoutMs: 45_000,
       });
 
       if (parsed) {
-        if (roundType === "TECHNICAL_MCQ" && Array.isArray(parsed.questions)) {
-          // Clean any bracketed role prefixes from prompts
+        if (
+          roundType === "TECHNICAL_MCQ" &&
+          Array.isArray(parsed.questions)
+        ) {
+          // Clean bracketed role prefixes from prompts.
           parsed.questions.forEach((q: any) => {
             if (q.prompt && typeof q.prompt === "string") {
               q.prompt = q.prompt.replace(/^\[.*?\]\s*/, "");
             }
           });
-          // Guarantee exactly the requested count
+
+          // Guarantee exactly the requested count.
           parsed.questions = synthesizeMcqs(parsed.questions);
         }
-        return res.json({ ok: true, source: "AI_MODEL", model: env.AI_MODEL, data: parsed });
+
+        return res.json({
+          ok: true,
+          source: "AI_MODEL",
+          model: env.AI_MODEL,
+          data: parsed,
+        });
       }
     } catch (e) {
-      logger.warn({ e }, "Remote AI call failed, falling back to local generator");
+      logger.warn(
+        { e },
+        "Remote AI call failed, falling back to local generator",
+      );
     }
   }
 
-  // Fallback realistic generator if AI endpoint unreachable or returns fewer
+  // Fallback realistic generator if AI endpoint is unreachable or returns fewer questions.
   if (roundType === "TECHNICAL_MCQ") {
     const qList = synthesizeMcqs([]);
-    return res.json({ ok: true, source: "FALLBACK_ENGINE", data: { questions: qList } });
+
+    return res.json({
+      ok: true,
+      source: "FALLBACK_ENGINE",
+      data: {
+        questions: qList,
+      },
+    });
   }
 
   if (roundType === "LIVE_CODING") {
     let taskTitle = `Scalable Event-Driven Webhook Processing Service for ${role}`;
-    let taskReqs = `1. Implement an idempotent webhook ingestion HTTP endpoint that verifies HMAC-SHA256 signatures.\n2. Ingest incoming payloads into an asynchronous worker queue with a concurrency limit (e.g., 5 concurrent workers).\n3. Implement exponential backoff retry logic (up to 3 attempts) for failed webhook delivery attempts.\n4. Maintain an in-memory audit log of webhook events with status: RECEIVED, PROCESSING, SUCCEEDED, FAILED.\n5. Ensure graceful shutdown handling to process remaining queue items upon SIGTERM/SIGINT.`;
-    let taskOutput = `1. Modular TypeScript/Node.js implementation with typed interfaces and centralized error handling.\n2. Demonstration script or unit tests verifying signature validation, duplicate deduplication, and retry backoff.\n3. Clear documentation explaining concurrency model, failure recovery, and throughput characteristics.`;
+
+    let taskReqs = `1. Implement an idempotent webhook ingestion HTTP endpoint that verifies HMAC-SHA256 signatures.
+2. Ingest incoming payloads into an asynchronous worker queue with a concurrency limit (e.g., 5 concurrent workers).
+3. Implement exponential backoff retry logic (up to 3 attempts) for failed webhook delivery attempts.
+4. Maintain an in-memory audit log of webhook events with status: RECEIVED, PROCESSING, SUCCEEDED, FAILED.
+5. Ensure graceful shutdown handling to process remaining queue items upon SIGTERM/SIGINT.`;
+
+    let taskOutput = `1. Modular TypeScript/Node.js implementation with typed interfaces and centralized error handling.
+2. Demonstration script or unit tests verifying signature validation, duplicate deduplication, and retry backoff.
+3. Clear documentation explaining concurrency model, failure recovery, and throughput characteristics.`;
 
     if (diff === "EASY") {
       taskTitle = `RESTful Data Caching & Validation Microservice for ${role}`;
-      taskReqs = `1. Develop a REST API endpoint that accepts and validates candidate data payloads using JSON Schema or Zod.\n2. Implement an in-memory cache layer with TTL (Time-To-Live) of 60 seconds to prevent redundant database lookups.\n3. Add centralized error handling middleware returning standardized RFC-7807 error responses.\n4. Write basic unit tests covering valid input, invalid input validation errors, and cache hit/miss behavior.`;
-      taskOutput = `1. Well-structured TypeScript source code with clear separation of routes, controllers, and services.\n2. Passing unit test suite.\n3. Output sample showing cache hit response headers (X-Cache: HIT vs MISS) and formatted JSON response.`;
+
+      taskReqs = `1. Develop a REST API endpoint that accepts and validates candidate data payloads using JSON Schema or Zod.
+2. Implement an in-memory cache layer with TTL (Time-To-Live) of 60 seconds to prevent redundant database lookups.
+3. Add centralized error handling middleware returning standardized RFC-7807 error responses.
+4. Write basic unit tests covering valid input, invalid input validation errors, and cache hit/miss behavior.`;
+
+      taskOutput = `1. Well-structured TypeScript source code with clear separation of routes, controllers, and services.
+2. Passing unit test suite.
+3. Output sample showing cache hit response headers (X-Cache: HIT vs MISS) and formatted JSON response.`;
     } else if (diff === "HARD") {
       taskTitle = `High-Throughput Distributed Rate Limiter & Concurrency Coordinator for ${role}`;
-      taskReqs = `1. Design and build a multi-tenant sliding window rate limiter capable of sustaining 10,000+ operations/sec.\n2. Implement atomic token replenishment and burst-handling logic using Redis or distributed atomic counters.\n3. Implement Circuit Breaker fallbacks when dependency services degrade or fail to respond within 50ms.\n4. Support dynamic per-tenant quota configurations and priority tiering (Free, Pro, Enterprise).\n5. Include comprehensive benchmarking telemetry and load test scripts measuring P95/P99 latency.`;
-      taskOutput = `1. Production-ready TypeScript codebase with thread-safe / race-condition-free concurrency management.\n2. Automated stress test report demonstrating P99 latency under 5ms during simulated burst traffic.\n3. Architecture design document detailing partition strategy, recovery under node failure, and memory footprint analysis.`;
+
+      taskReqs = `1. Design and build a multi-tenant sliding window rate limiter capable of sustaining 10,000+ operations/sec.
+2. Implement atomic token replenishment and burst-handling logic using Redis or distributed atomic counters.
+3. Implement Circuit Breaker fallbacks when dependency services degrade or fail to respond within 50ms.
+4. Support dynamic per-tenant quota configurations and priority tiering (Free, Pro, Enterprise).
+5. Include comprehensive benchmarking telemetry and load test scripts measuring P95/P99 latency.`;
+
+      taskOutput = `1. Production-ready TypeScript codebase with thread-safe / race-condition-free concurrency management.
+2. Automated stress test report demonstrating P99 latency under 5ms during simulated burst traffic.
+3. Architecture design document detailing partition strategy, recovery under node failure, and memory footprint analysis.`;
     }
 
     return res.json({
@@ -713,17 +879,24 @@ Respond ONLY with valid JSON in this exact structure:
     });
   }
 
-  // MANAGERIAL - Do not generate any questions; LiveKit Video Call Room instead
-  const roomSlug = `bh-manager-${role.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 15)}-r3`;
+  // Managerial: create a LiveKit video call room instead of questions.
+  const roomSlug = `bh-manager-${role
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, 15)}-r3`;
+
   return res.json({
     ok: true,
     source: "LIVEKIT_ENGINE",
     data: {
       isLivekitRound: true,
-      message: "Manager round is a live video call room powered by LiveKit RTC. No static questions are generated.",
+      message:
+        "Manager round is a live video call room powered by LiveKit RTC. No static questions are generated.",
       livekitRoom: {
         roomName: roomSlug,
-        roomUrl: `https://meet.livekit.io/${roomSlug}-${Math.random().toString(36).slice(2, 7)}`,
+        roomUrl: `https://meet.livekit.io/${roomSlug}-${Math.random()
+          .toString(36)
+          .slice(2, 7)}`,
         interviewerName: "Tanuja HR & Engineering Manager",
         interviewerEmail: "hr@brutallyhired.com",
         status: "READY",
@@ -787,7 +960,8 @@ Respond ONLY with a valid JSON object matching this schema:
     try {
       const parsed = await callAiJson<any>({
         message: prompt,
-        systemPrompt: "You are an expert technical evaluator that outputs strict JSON.",
+        systemPrompt:
+          "You are an expert technical evaluator that outputs strict JSON.",
         temperature: 0.1,
         timeoutMs: 45_000,
       });
@@ -798,24 +972,59 @@ Respond ONLY with a valid JSON object matching this schema:
           source: "AI_MODEL",
           model: env.AI_MODEL,
           evaluation: {
-            score: Math.max(0, Math.min(100, Math.round(parsed.score))),
-            verdict: parsed.verdict || (parsed.score >= 70 ? "PASS" : "REVISE"),
-            summary: String(parsed.summary || "Submission evaluated against core architecture requirements."),
-            strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : ["Clean code organization", "Solid architectural patterns"],
-            areasForImprovement: Array.isArray(parsed.areasForImprovement) ? parsed.areasForImprovement.map(String) : ["Consider adding comprehensive test coverage for edge cases"],
-            interviewDefenseQuestions: Array.isArray(parsed.interviewDefenseQuestions) ? parsed.interviewDefenseQuestions.map(String) : ["Walk us through your error handling and retry strategy."],
+            score: Math.max(
+              0,
+              Math.min(100, Math.round(parsed.score)),
+            ),
+            verdict:
+              parsed.verdict ||
+              (parsed.score >= 70 ? "PASS" : "REVISE"),
+            summary: String(
+              parsed.summary ||
+              "Submission evaluated against core architecture requirements.",
+            ),
+            strengths: Array.isArray(parsed.strengths)
+              ? parsed.strengths.map(String)
+              : [
+                "Clean code organization",
+                "Solid architectural patterns",
+              ],
+            areasForImprovement: Array.isArray(
+              parsed.areasForImprovement,
+            )
+              ? parsed.areasForImprovement.map(String)
+              : [
+                "Consider adding comprehensive test coverage for edge cases",
+              ],
+            interviewDefenseQuestions: Array.isArray(
+              parsed.interviewDefenseQuestions,
+            )
+              ? parsed.interviewDefenseQuestions.map(String)
+              : [
+                "Walk us through your error handling and retry strategy.",
+              ],
           },
         });
       }
     } catch (e) {
-      logger.warn({ e }, "AI assignment evaluation failed, using rubric evaluator fallback");
+      logger.warn(
+        { e },
+        "AI assignment evaluation failed, using rubric evaluator fallback",
+      );
     }
   }
 
-  // Fallback high-quality evaluation based on submission length & heuristics
-  const hasCode = Boolean(codeSnippet && codeSnippet.trim().length > 50);
-  const hasText = Boolean(submissionText && submissionText.trim().length > 50);
-  const baseScore = hasCode && hasText ? 92 : hasCode || hasText ? 85 : 75;
+  // Fallback evaluation based on submission length and heuristics.
+  const hasCode = Boolean(
+    codeSnippet && codeSnippet.trim().length > 50,
+  );
+
+  const hasText = Boolean(
+    submissionText && submissionText.trim().length > 50,
+  );
+
+  const baseScore =
+    hasCode && hasText ? 92 : hasCode || hasText ? 85 : 75;
 
   return res.json({
     ok: true,
@@ -841,7 +1050,11 @@ Respond ONLY with a valid JSON object matching this schema:
   });
 });
 
-// In-Memory cache for live candidate proctoring violations & hardware reports
+// ============================================================================
+// PROCTORING TELEMETRY MANAGEMENT
+// ============================================================================
+
+// In-memory cache for live candidate proctoring violations and hardware reports.
 const PROCTORING_VIOLATION_CACHE: Record<
   string,
   {
@@ -882,44 +1095,61 @@ export const recordProctoringTelemetry = ah(async (req, res) => {
   }
 
   const state = PROCTORING_VIOLATION_CACHE[cId]!;
+
   if (hardwareSnapshot) {
     state.hardwareSnapshot = hardwareSnapshot;
   }
 
   if (eventType) {
     state.violationCount += 1;
+
     const report = {
       reportId: `rep-${state.violationCount}-${Date.now()}`,
       incidentNumber: state.violationCount,
       eventType,
       description: description || `Proctoring flag: ${eventType}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-      severity: severity || (state.violationCount >= 5 ? "CRITICAL" : "HIGH"),
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+      severity:
+        severity || (state.violationCount >= 5 ? "CRITICAL" : "HIGH"),
       evidenceData: evidenceData || {},
     };
+
     state.reports.push(report);
   } else if (typeof rawCount === "number") {
     state.violationCount = rawCount;
   }
+
   state.lastUpdated = new Date().toISOString();
 
-  // Enforce 5 Reports Rejection Rule
+  // Enforce the five-report disqualification rule.
   if (state.violationCount >= 5 && !state.isDisqualified) {
     state.isDisqualified = true;
 
-    // Disqualify candidate application in database
+    // Disqualify the candidate application in the database.
     try {
       await prisma.application.updateMany({
-        where: { id: cId },
-        data: { stage: "REJECTED" as any },
+        where: {
+          id: cId,
+        },
+        data: {
+          stage: "REJECTED" as any,
+        },
       });
-    } catch {}
+    } catch {
+      // Preserve telemetry response even if the database update fails.
+    }
 
-    // Send proctoring disqualification notice email
+    // Send proctoring disqualification notice email.
     const emailTo = candidateEmail || "netopsysai@gmail.com";
     const nameTo = candidateName || "praveen Nobi";
+
     try {
       const currentTenant = tenantOf(req);
+
       await sendTemplate({
         to: emailTo,
         template: "offer_rejected" as TemplateKey,
@@ -929,7 +1159,8 @@ export const recordProctoringTelemetry = ah(async (req, res) => {
           jobTitle: jobTitle || "Ai Ml",
         },
         path: `/${currentTenant.slug}/applications/${cId}`,
-        subject: "Examination Integrity Disqualification Notice — Brutallyhired",
+        subject:
+          "Examination Integrity Disqualification Notice — Brutallyhired",
         heading: "Assessment Terminated: Integrity Policy Violation",
         body: `Dear ${nameTo}, your proctored assessment examination has been terminated because 5 critical integrity and hardware proctoring violations were recorded by BrutalAssessAI™ (including unauthorized window changes, port connections, or secondary display events). In accordance with enterprise examination security protocols, your application has been automatically disqualified.`,
       });
@@ -949,7 +1180,9 @@ export const recordProctoringTelemetry = ah(async (req, res) => {
 });
 
 export const getProctoringTelemetry = ah(async (req, res) => {
-  const cId = req.params.candidateId || "cmwssnj7e0003vnvsanhlfhqg";
+  const cId =
+    req.params.candidateId || "cmwssnj7e0003vnvsanhlfhqg";
+
   const state = PROCTORING_VIOLATION_CACHE[cId] || {
     candidateId: cId,
     violationCount: 0,
@@ -958,5 +1191,715 @@ export const getProctoringTelemetry = ah(async (req, res) => {
     hardwareSnapshot: null,
     lastUpdated: new Date().toISOString(),
   };
-  return res.json({ ok: true, data: state });
+
+  return res.json({
+    ok: true,
+    data: state,
+  });
+});
+
+// ============================================================================
+// INTERVIEW SLOTS MANAGEMENT & PERSISTENCE
+// ============================================================================
+
+function getTenantSlotsFilePath(tenantSlug: string): string {
+  const baseDir = path.resolve(
+    process.cwd(),
+    "storage",
+    "tenants",
+    tenantSlug,
+  );
+
+  return path.join(baseDir, "interview-slots.json");
+}
+
+export const getInterviewSlots = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+
+    if (Array.isArray(slots) && slots.length > 0) {
+      return res.json({
+        ok: true,
+        slots,
+        source: "database_storage",
+      });
+    }
+  } catch {
+    // File does not exist yet; query the database for scheduled rounds/slots.
+  }
+
+  try {
+    const rounds = await prisma.interviewRound.findMany({
+      where: {
+        application: {
+          tenantId: tenant.id,
+        },
+      },
+      include: {
+        panelists: true,
+        slots: true,
+        application: {
+          include: {
+            user: true,
+            job: true,
+          },
+        },
+      },
+      orderBy: {
+        scheduledStart: "asc",
+      },
+    });
+
+    const slots = rounds.flatMap((r) => {
+      const interviewer = r.panelists[0]?.name || "Tanuja HR";
+      const candidateName =
+        r.application.user.displayName ||
+        r.application.user.email;
+      const candidateEmail = r.application.user.email;
+      const jobTitle = r.application.job.title;
+
+      return r.slots.map((s, idx) => {
+        const start = s.startsAt
+          ? new Date(s.startsAt)
+          : new Date();
+
+        const end = s.endsAt
+          ? new Date(s.endsAt)
+          : new Date(
+            start.getTime() +
+            (r.durationMinutes || 60) * 60000,
+          );
+
+        const pad = (n: number) => String(n).padStart(2, "0");
+
+        const dateStr = `${start.getFullYear()}-${pad(
+          start.getMonth() + 1,
+        )}-${pad(start.getDate())}`;
+
+        const startTimeStr = `${pad(
+          start.getHours(),
+        )}:${pad(start.getMinutes())}`;
+
+        const endTimeStr = `${pad(
+          end.getHours(),
+        )}:${pad(end.getMinutes())}`;
+
+        return {
+          id: s.id || `slot-${r.id}-${idx}`,
+          jobId: r.application.jobId,
+          jobTitle,
+          roundNumber: r.sequence,
+          roundName: r.title,
+          date: dateStr,
+          startTime: startTimeStr,
+          endTime: endTimeStr,
+          durationMinutes: r.durationMinutes || 60,
+          interviewerName: interviewer,
+          interviewerEmail: "hr@brutallyhired.com",
+          mode: "LIVEKIT_VIDEO",
+          status:
+            r.status === "COMPLETED"
+              ? "COMPLETED"
+              : s.bookedAt || r.status === "SCHEDULED"
+                ? "BOOKED"
+                : "AVAILABLE",
+          bookedCandidateId: r.applicationId,
+          bookedCandidateName: candidateName,
+          bookedCandidateEmail: candidateEmail,
+          meetingLink: `https://meet.livekit.io/bh-room-${r.id}`,
+          createdAt: r.createdAt.toISOString(),
+        };
+      });
+    });
+
+    return res.json({
+      ok: true,
+      slots,
+      source: "prisma_rounds",
+    });
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Database query for interview slots",
+    );
+
+    return res.json({
+      ok: true,
+      slots: [],
+      source: "empty",
+    });
+  }
+});
+
+export const saveInterviewSlots = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const { slots } = req.body;
+
+  if (!Array.isArray(slots)) {
+    return res.status(400).json({
+      error: "Expected 'slots' array in request body.",
+    });
+  }
+
+  // Persist to tenant file storage.
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+
+  try {
+    await fs.mkdir(path.dirname(filePath), {
+      recursive: true,
+    });
+
+    await fs.writeFile(
+      filePath,
+      JSON.stringify(slots, null, 2),
+      "utf-8",
+    );
+  } catch (fileErr) {
+    logger.warn(
+      { fileErr },
+      "File storage save for interview slots",
+    );
+  }
+
+  // Synchronize booked slots with Prisma InterviewRound and InterviewSlot.
+  try {
+    for (const slot of slots) {
+      if (
+        slot.status === "BOOKED" &&
+        (slot.bookedCandidateId || slot.bookedCandidateEmail)
+      ) {
+        const app = await prisma.application.findFirst({
+          where: {
+            tenantId: tenant.id,
+            OR: [
+              ...(slot.bookedCandidateId
+                ? [{ id: slot.bookedCandidateId }]
+                : []),
+              ...(slot.bookedCandidateEmail
+                ? [
+                  {
+                    user: {
+                      email: slot.bookedCandidateEmail
+                        .toLowerCase()
+                        .trim(),
+                    },
+                  },
+                ]
+                : []),
+            ],
+          },
+        });
+
+        if (app) {
+          const [sH = 10, sM = 0] = String(
+            slot.startTime || "10:00",
+          )
+            .split(":")
+            .map(Number);
+
+          const [eH = 11, eM = 0] = String(
+            slot.endTime || "11:00",
+          )
+            .split(":")
+            .map(Number);
+
+          const [y = 2026, m = 11, d = 25] = String(
+            slot.date || "2026-11-25",
+          )
+            .split("-")
+            .map(Number);
+
+          const startsAt = new Date(
+            Date.UTC(y, m - 1, d, sH, sM),
+          );
+
+          const endsAt = new Date(
+            Date.UTC(y, m - 1, d, eH, eM),
+          );
+
+          let round = await prisma.interviewRound.findFirst({
+            where: {
+              applicationId: app.id,
+              sequence: slot.roundNumber || 1,
+            },
+          });
+
+          if (round) {
+            await prisma.interviewRound.update({
+              where: {
+                id: round.id,
+              },
+              data: {
+                status:
+                  slot.status === "COMPLETED"
+                    ? "COMPLETED"
+                    : "SCHEDULED",
+                scheduledStart: startsAt,
+                scheduledEnd: endsAt,
+                title: slot.roundName || round.title,
+              },
+            });
+          } else {
+            round = await prisma.interviewRound.create({
+              data: {
+                applicationId: app.id,
+                sequence: slot.roundNumber || 1,
+                title:
+                  slot.roundName ||
+                  `Round ${slot.roundNumber || 1}: Evaluation`,
+                durationMinutes: slot.durationMinutes || 60,
+                status:
+                  slot.status === "COMPLETED"
+                    ? "COMPLETED"
+                    : "SCHEDULED",
+                scheduledStart: startsAt,
+                scheduledEnd: endsAt,
+                roomName: `iv_${slot.id
+                  .replace(/[^a-zA-Z0-9]/g, "")
+                  .slice(0, 16)}`,
+                panelists: {
+                  create: [
+                    {
+                      name: slot.interviewerName || "Tanuja HR",
+                      title: "Interviewer Host",
+                    },
+                  ],
+                },
+              },
+            });
+          }
+
+          // Advance application stage to INTERVIEW.
+          await prisma.application.update({
+            where: {
+              id: app.id,
+            },
+            data: {
+              stage: "INTERVIEW",
+            },
+          });
+        }
+      }
+    }
+  } catch (dbErr) {
+    logger.warn(
+      { dbErr },
+      "Database synchronization for interview slots",
+    );
+  }
+
+  return res.json({
+    ok: true,
+    count: slots.length,
+    message: "Interview slots saved and synchronized.",
+  });
+});
+
+export const rescheduleInterviewSlot = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+
+  const {
+    slotId,
+    newDate,
+    newStartTime,
+    newEndTime,
+    reason,
+    candidateEmail,
+    candidateName,
+    jobTitle,
+    roundName,
+    meetingLink,
+    interviewerName,
+  } = req.body;
+
+  if (!slotId || !newDate || !newStartTime || !newEndTime) {
+    return res.status(400).json({
+      error: "Missing required reschedule parameters.",
+    });
+  }
+
+  // Update in file storage.
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+  let updatedSlot: any = null;
+
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+
+    const idx = slots.findIndex(
+      (s: any) => s.id === slotId,
+    );
+
+    if (idx !== -1) {
+      slots[idx] = {
+        ...slots[idx],
+        date: newDate,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        status: "BOOKED",
+      };
+
+      updatedSlot = slots[idx];
+
+      await fs.writeFile(
+        filePath,
+        JSON.stringify(slots, null, 2),
+        "utf-8",
+      );
+    }
+  } catch (fileErr) {
+    logger.warn(
+      { fileErr },
+      "Reschedule file storage update note",
+    );
+  }
+
+  // Update database if candidate email/application exists.
+  if (candidateEmail) {
+    try {
+      const app = await prisma.application.findFirst({
+        where: {
+          tenantId: tenant.id,
+          user: {
+            email: candidateEmail.toLowerCase().trim(),
+          },
+        },
+        include: {
+          user: true,
+        },
+      });
+
+      if (app) {
+        const [sH, sM] = newStartTime
+          .split(":")
+          .map(Number);
+
+        const [eH, eM] = newEndTime
+          .split(":")
+          .map(Number);
+
+        const [y, m, d] = newDate
+          .split("-")
+          .map(Number);
+
+        const startsAt = new Date(
+          Date.UTC(y, m - 1, d, sH, sM),
+        );
+
+        const endsAt = new Date(
+          Date.UTC(y, m - 1, d, eH, eM),
+        );
+
+        await prisma.interviewRound.updateMany({
+          where: {
+            applicationId: app.id,
+            status: {
+              not: "CANCELLED",
+            },
+          },
+          data: {
+            scheduledStart: startsAt,
+            scheduledEnd: endsAt,
+            status: "SCHEDULED",
+          },
+        });
+
+        await prisma.applicationEvent.create({
+          data: {
+            applicationId: app.id,
+            type: "interview_rescheduled",
+            visibility: "PUBLIC",
+            data: {
+              newDate,
+              newStartTime,
+              newEndTime,
+              reason:
+                reason ||
+                "Schedule updated by hiring team",
+            },
+          },
+        });
+      }
+    } catch (dbErr) {
+      logger.warn(
+        { dbErr },
+        "Database reschedule update note",
+      );
+    }
+
+    // Send automatic rescheduling email to candidate.
+    try {
+      await sendTemplate({
+        to: candidateEmail,
+        template: "interview_invited" as TemplateKey,
+        tenant,
+        vars: {
+          jobTitle: jobTitle || "Software Developer",
+          roundTitle: roundName || "Interview Round",
+          dueAt: `${newDate} at ${newStartTime}`,
+        },
+        path: `/${tenant.slug}/interviews`,
+        subject: `Rescheduled: Interview for ${jobTitle || "Role"
+          } (${roundName || "Round"})`,
+        heading: "Your Interview Has Been Rescheduled",
+        body: `Your interview session for ${jobTitle || "the position"
+          } (${roundName || "Evaluation Round"}) has been rescheduled to ${newDate} from ${newStartTime} to ${newEndTime}.${reason ? ` Reason: ${reason}.` : ""} Interviewer: ${interviewerName || "Interview Panel"
+          }. Meeting Link: ${meetingLink || "Please access your candidate portal."
+          }`,
+      });
+    } catch (emailErr) {
+      logger.warn(
+        { emailErr },
+        "Reschedule email dispatch note",
+      );
+    }
+  }
+
+  return res.json({
+    ok: true,
+    slotId,
+    newDate,
+    newStartTime,
+    newEndTime,
+    updatedSlot,
+  });
+});
+
+export const cancelInterviewSlot = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+
+  const {
+    slotId,
+    reason,
+    releaseSlot,
+    candidateEmail,
+    candidateName,
+    jobTitle,
+    roundName,
+  } = req.body;
+
+  if (!slotId) {
+    return res.status(400).json({
+      error: "Missing required slotId parameter.",
+    });
+  }
+
+  // Update in file storage.
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+
+    const idx = slots.findIndex(
+      (s: any) => s.id === slotId,
+    );
+
+    if (idx !== -1) {
+      if (releaseSlot) {
+        slots[idx] = {
+          ...slots[idx],
+          status: "AVAILABLE",
+          bookedCandidateId: undefined,
+          bookedCandidateName: undefined,
+          bookedCandidateEmail: undefined,
+        };
+      } else {
+        slots[idx] = {
+          ...slots[idx],
+          status: "CANCELLED",
+        };
+      }
+
+      await fs.writeFile(
+        filePath,
+        JSON.stringify(slots, null, 2),
+        "utf-8",
+      );
+    }
+  } catch (fileErr) {
+    logger.warn(
+      { fileErr },
+      "Cancel slot file storage update note",
+    );
+  }
+
+  // Update database if candidate email exists.
+  if (candidateEmail) {
+    try {
+      const app = await prisma.application.findFirst({
+        where: {
+          tenantId: tenant.id,
+          user: {
+            email: candidateEmail.toLowerCase().trim(),
+          },
+        },
+      });
+
+      if (app) {
+        await prisma.interviewRound.updateMany({
+          where: {
+            applicationId: app.id,
+            status: {
+              not: "COMPLETED",
+            },
+          },
+          data: {
+            status: "CANCELLED",
+          },
+        });
+
+        await prisma.applicationEvent.create({
+          data: {
+            applicationId: app.id,
+            type: "interview_cancelled",
+            visibility: "PUBLIC",
+            data: {
+              reason:
+                reason || "Cancelled by recruitment team",
+            },
+          },
+        });
+      }
+    } catch (dbErr) {
+      logger.warn(
+        { dbErr },
+        "Database cancel interview update note",
+      );
+    }
+
+    // Send automatic cancellation email to candidate.
+    try {
+      await sendTemplate({
+        to: candidateEmail,
+        template: "interview_invited" as TemplateKey,
+        tenant,
+        vars: {
+          jobTitle: jobTitle || "Software Developer",
+          roundTitle: roundName || "Interview Round",
+        },
+        path: `/${tenant.slug}/interviews`,
+        subject: `Cancelled: Interview for ${jobTitle || "Role"
+          } (${roundName || "Round"})`,
+        heading: "Interview Cancellation Notice",
+        body: `We are writing to inform you that your scheduled interview for ${jobTitle || "the position"
+          } (${roundName || "Round"}) has been cancelled.${reason ? ` Reason: ${reason}.` : ""} Our recruiting team will follow up with you regarding next steps.`,
+      });
+    } catch (emailErr) {
+      logger.warn(
+        { emailErr },
+        "Cancel email dispatch note",
+      );
+    }
+  }
+
+  return res.json({
+    ok: true,
+    slotId,
+    cancelled: true,
+  });
+});
+
+export const completeInterviewSlot = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+
+  const {
+    slotId,
+    notes,
+    candidateEmail,
+    roundName,
+    jobTitle,
+  } = req.body;
+
+  if (!slotId) {
+    return res.status(400).json({
+      error: "Missing required slotId parameter.",
+    });
+  }
+
+  // Update in file storage.
+  const filePath = getTenantSlotsFilePath(tenant.slug);
+
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    const slots = JSON.parse(raw);
+
+    const idx = slots.findIndex(
+      (s: any) => s.id === slotId,
+    );
+
+    if (idx !== -1) {
+      slots[idx] = {
+        ...slots[idx],
+        status: "COMPLETED",
+        notes: notes || slots[idx].notes,
+      };
+
+      await fs.writeFile(
+        filePath,
+        JSON.stringify(slots, null, 2),
+        "utf-8",
+      );
+    }
+  } catch (fileErr) {
+    logger.warn(
+      { fileErr },
+      "Complete slot file storage update note",
+    );
+  }
+
+  // Update database.
+  if (candidateEmail) {
+    try {
+      const app = await prisma.application.findFirst({
+        where: {
+          tenantId: tenant.id,
+          user: {
+            email: candidateEmail.toLowerCase().trim(),
+          },
+        },
+      });
+
+      if (app) {
+        await prisma.interviewRound.updateMany({
+          where: {
+            applicationId: app.id,
+            status: {
+              not: "CANCELLED",
+            },
+          },
+          data: {
+            status: "COMPLETED",
+          },
+        });
+
+        await prisma.applicationEvent.create({
+          data: {
+            applicationId: app.id,
+            type: "interview_completed",
+            visibility: "INTERNAL",
+            data: {
+              notes:
+                notes || "Interview successfully completed",
+            },
+          },
+        });
+      }
+    } catch (dbErr) {
+      logger.warn(
+        { dbErr },
+        "Database complete interview update note",
+      );
+    }
+  }
+
+  return res.json({
+    ok: true,
+    slotId,
+    completed: true,
+  });
 });
