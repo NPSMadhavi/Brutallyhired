@@ -1,3 +1,5 @@
+import { clsx } from "clsx";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { useInterviews } from "@/api/hooks";
@@ -6,7 +8,6 @@ import { Pill } from "@/components/ui/Card";
 import { EmptyState, PageLoader } from "@/components/ui/feedback";
 import { Arrow, Calendar, Check, ChevronLeft, Clock, Video } from "@/components/ui/icons";
 import { useFormat } from "@/lib/format";
-import { useEffect, useState } from "react";
 
 export interface StoredRoundData {
   id: string;
@@ -16,7 +17,7 @@ export interface StoredRoundData {
   subtitle: string;
   type: "ASSIGNMENT_DEFENSE" | "LIVEKIT_VIDEO" | "LEADERSHIP_SCENARIO";
   durationMinutes: number;
-  status: "AWAITING_BOOKING" | "SCHEDULED" | "ASSIGNMENT_SUBMITTED" | "COMPLETED";
+  status: "AWAITING_BOOKING" | "SCHEDULED" | "ASSIGNMENT_SUBMITTED" | "COMPLETED" | "LOCKED";
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
   panelists: string;
@@ -43,6 +44,17 @@ export function InterviewsPage() {
     })();
   const q = useInterviews(tenant.slug, appId);
   const [rounds, setRounds] = useState<StoredRoundData[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleUpdate = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("storage", handleUpdate);
+    window.addEventListener("bh_application_updated", handleUpdate);
+    return () => {
+      window.removeEventListener("storage", handleUpdate);
+      window.removeEventListener("bh_application_updated", handleUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     // Load scheduled interviews from localStorage
@@ -59,20 +71,72 @@ export function InterviewsPage() {
       if (raw) storedSubmissions = JSON.parse(raw);
     } catch {}
 
-    const now = new Date();
-    const defaultStartR1 = new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
-    const defaultEndR1 = new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString();
-    const defaultStartR2 = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-    const defaultEndR2 = new Date(now.getTime() + 25 * 60 * 60 * 1000).toISOString();
-    const defaultStartR3 = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString();
-    const defaultEndR3 = new Date(now.getTime() + 49 * 60 * 60 * 1000).toISOString();
-
     const r1Sched = storedScheduled[`${appId}_round-1`] || storedScheduled["round-1"];
     const r2Sched = storedScheduled[`${appId}_round-2`] || storedScheduled["round-2"];
     const r3Sched = storedScheduled[`${appId}_round-3`] || storedScheduled["round-3"];
 
     const r1Sub = storedSubmissions[`${appId}_round-1`] || storedSubmissions["round-1"];
     const r3Sub = storedSubmissions[`${appId}_round-3`] || storedSubmissions["round-3"];
+
+    const r1Done = r1Sched?.status === "COMPLETED";
+    const r2Done = r2Sched?.status === "COMPLETED";
+    const r3Done = r3Sched?.status === "COMPLETED";
+
+    // Compute Round 1 Status & Dates
+    const r1Status: StoredRoundData["status"] = r1Done
+      ? "COMPLETED"
+      : r1Sched?.status === "SCHEDULED"
+      ? "SCHEDULED"
+      : r1Sub
+      ? "ASSIGNMENT_SUBMITTED"
+      : "AWAITING_BOOKING";
+
+    const r1Start =
+      (r1Status === "SCHEDULED" || r1Status === "COMPLETED") && r1Sched?.startsAt
+        ? r1Sched.startsAt
+        : null;
+    const r1End =
+      (r1Status === "SCHEDULED" || r1Status === "COMPLETED") && r1Sched?.endsAt
+        ? r1Sched.endsAt
+        : null;
+
+    // Compute Round 2 Status & Dates (Requires Round 1 completion)
+    const r2Status: StoredRoundData["status"] = !r1Done
+      ? "LOCKED"
+      : r2Done
+      ? "COMPLETED"
+      : r2Sched?.status === "SCHEDULED"
+      ? "SCHEDULED"
+      : "AWAITING_BOOKING";
+
+    const r2Start =
+      (r2Status === "SCHEDULED" || r2Status === "COMPLETED") && r2Sched?.startsAt
+        ? r2Sched.startsAt
+        : null;
+    const r2End =
+      (r2Status === "SCHEDULED" || r2Status === "COMPLETED") && r2Sched?.endsAt
+        ? r2Sched.endsAt
+        : null;
+
+    // Compute Round 3 Status & Dates (Requires Round 2 completion)
+    const r3Status: StoredRoundData["status"] = !r2Done
+      ? "LOCKED"
+      : r3Done
+      ? "COMPLETED"
+      : r3Sched?.status === "SCHEDULED"
+      ? "SCHEDULED"
+      : r3Sub
+      ? "ASSIGNMENT_SUBMITTED"
+      : "AWAITING_BOOKING";
+
+    const r3Start =
+      (r3Status === "SCHEDULED" || r3Status === "COMPLETED") && r3Sched?.startsAt
+        ? r3Sched.startsAt
+        : null;
+    const r3End =
+      (r3Status === "SCHEDULED" || r3Status === "COMPLETED") && r3Sched?.endsAt
+        ? r3Sched.endsAt
+        : null;
 
     const initialRounds: StoredRoundData[] = [
       {
@@ -83,9 +147,9 @@ export function InterviewsPage() {
         subtitle: "In-Portal Assignment + System Architecture Defense",
         type: "ASSIGNMENT_DEFENSE",
         durationMinutes: 60,
-        status: r1Sched?.status || (r1Sub ? "ASSIGNMENT_SUBMITTED" : "AWAITING_BOOKING"),
-        scheduledStart: r1Sched?.startsAt || defaultStartR1,
-        scheduledEnd: r1Sched?.endsAt || defaultEndR1,
+        status: r1Status,
+        scheduledStart: r1Start,
+        scheduledEnd: r1End,
         panelists: "Arun K. (Principal Architect) · Vikram M. (Staff Engineer)",
         formatBadge: "In-Portal Assignment & Defense",
         description: "Submit your distributed system architecture & proctored pipeline implementation, evaluated by Qwen 3.5:9b AI.",
@@ -98,9 +162,9 @@ export function InterviewsPage() {
         subtitle: "Interactive LiveRTC Video Room & Live Coding",
         type: "LIVEKIT_VIDEO",
         durationMinutes: 45,
-        status: r2Sched?.status || (r1Sched?.status === "COMPLETED" || r1Sub ? "SCHEDULED" : "AWAITING_BOOKING"),
-        scheduledStart: r2Sched?.startsAt || defaultStartR2,
-        scheduledEnd: r2Sched?.endsAt || defaultEndR2,
+        status: r2Status,
+        scheduledStart: r2Start,
+        scheduledEnd: r2End,
         panelists: "Chandra S. (VP of Engineering)",
         formatBadge: "LiveKit RTC Video Conference",
         description: "Deep dive into distributed systems resiliency, live architecture diagrams, and high-concurrency event ingestion.",
@@ -113,9 +177,9 @@ export function InterviewsPage() {
         subtitle: "Leadership Scenario Challenge + Executive Panel",
         type: "LEADERSHIP_SCENARIO",
         durationMinutes: 45,
-        status: r3Sched?.status || (r3Sub ? "ASSIGNMENT_SUBMITTED" : "AWAITING_BOOKING"),
-        scheduledStart: r3Sched?.startsAt || defaultStartR3,
-        scheduledEnd: r3Sched?.endsAt || defaultEndR3,
+        status: r3Status,
+        scheduledStart: r3Start,
+        scheduledEnd: r3End,
         panelists: "Tanuja HR (Head of Talent) · Ananya R. (Director of Product)",
         formatBadge: "Executive & Culture Alignment",
         description: "Solve a crisis incident scenario, discuss product engineering vision, and align on leadership principles.",
@@ -123,7 +187,7 @@ export function InterviewsPage() {
     ];
 
     setRounds(initialRounds);
-  }, [appId]);
+  }, [appId, refreshKey]);
 
   if (q.isPending && !rounds.length) return <PageLoader />;
 
@@ -174,15 +238,29 @@ export function InterviewsPage() {
           <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 font-medium border border-emerald-200">
             <Check size={13} /> Screening Passed (92%)
           </span>
-          <span className="px-2.5 py-1 rounded-full bg-brand-soft text-brand font-semibold border border-brand/20">
-            Round 1 Active
-          </span>
-          <span className="px-2.5 py-1 rounded-full bg-line-soft text-ink-muted">
-            Round 2 Ready
-          </span>
-          <span className="px-2.5 py-1 rounded-full bg-line-soft text-ink-muted">
-            Round 3 Ready
-          </span>
+          {rounds.map((r) => {
+            const isCompleted = r.status === "COMPLETED";
+            const isScheduled = r.status === "SCHEDULED";
+            const isLocked = r.status === "LOCKED";
+            return (
+              <span
+                key={r.id}
+                className={clsx(
+                  "px-2.5 py-1 rounded-full font-semibold border flex items-center gap-1",
+                  isCompleted
+                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                    : isScheduled
+                    ? "bg-blue-50 text-blue-800 border-blue-200"
+                    : isLocked
+                    ? "bg-line-soft text-ink-muted border-transparent"
+                    : "bg-brand-soft text-brand border-brand/20"
+                )}
+              >
+                {isCompleted && <Check size={12} />}
+                Round {r.sequence} {isCompleted ? "Passed" : isScheduled ? "Booked" : isLocked ? "Locked" : "Active"}
+              </span>
+            );
+          })}
         </div>
       </div>
 
@@ -205,7 +283,7 @@ export function InterviewsPage() {
                         {f.month(r.scheduledStart)}
                       </span>
                     ) : (
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-info-soft text-info-ink">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-canvas border border-line-2 text-ink-muted">
                         <Calendar size={24} />
                       </span>
                     )}
@@ -240,12 +318,17 @@ export function InterviewsPage() {
                         <span className="text-ink-muted">
                           Panelists: <strong className="text-ink font-semibold">{r.panelists}</strong>
                         </span>
-                        {r.scheduledStart && r.scheduledEnd && (
+                        {r.scheduledStart && r.scheduledEnd ? (
                           <>
                             <span>·</span>
                             <span className="text-brand font-medium">
                               {f.timeRange(r.scheduledStart, r.scheduledEnd)} ({f.tzName()})
                             </span>
+                          </>
+                        ) : (
+                          <>
+                            <span>·</span>
+                            <span className="text-ink-muted italic">Slot: Not Booked Yet</span>
                           </>
                         )}
                       </div>
@@ -253,26 +336,66 @@ export function InterviewsPage() {
                   </div>
 
                   <div className="flex flex-row md:flex-col items-center md:items-end justify-between w-full md:w-auto gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-line-soft">
-                    <Pill tone={r.status === "COMPLETED" ? "teal" : r.status === "AWAITING_BOOKING" ? "amber" : "blue"}>
-                      {r.status === "COMPLETED"
-                        ? "Round Passed"
-                        : r.status === "ASSIGNMENT_SUBMITTED"
-                        ? "Assignment Evaluated"
-                        : r.status === "SCHEDULED"
-                        ? "Slot Confirmed"
-                        : "Awaiting Booking"}
-                    </Pill>
+                    {r.status === "LOCKED" ? (
+                      <span className="rounded-full bg-line-soft text-ink-muted text-xs font-semibold px-3 py-1 border border-line">
+                        {r.sequence === 2 ? "Locked · Round 1 Pending" : "Locked · Round 2 Pending"}
+                      </span>
+                    ) : (
+                      <Pill tone={r.status === "COMPLETED" ? "teal" : r.status === "AWAITING_BOOKING" ? "amber" : "blue"}>
+                        {r.status === "COMPLETED"
+                          ? "Round Passed"
+                          : r.status === "ASSIGNMENT_SUBMITTED"
+                          ? "Assignment Evaluated"
+                          : r.status === "SCHEDULED"
+                          ? "Slot Confirmed"
+                          : "Awaiting Slot Selection"}
+                      </Pill>
+                    )}
 
                     <div className="flex items-center gap-2">
-                      <Link
-                        to={`/${tenant.slug}/applications/${appId}/interviews/${r.id}`}
-                        className="rounded-xl bg-brand text-white font-semibold text-xs px-4 py-2 hover:bg-brand-hover transition-colors no-underline flex items-center gap-1.5 shadow-xs"
-                      >
-                        {r.type === "ASSIGNMENT_DEFENSE" || r.type === "LEADERSHIP_SCENARIO"
-                          ? "Open Assignment & Workspace"
-                          : "Enter Live Session"}
-                        <Arrow size={14} />
-                      </Link>
+                      {r.status === "LOCKED" ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="rounded-xl bg-line-soft text-ink-muted/70 font-semibold text-xs px-4 py-2 cursor-not-allowed border border-line"
+                        >
+                          Locked
+                        </button>
+                      ) : r.status === "COMPLETED" ? (
+                        <Link
+                          to={`/${tenant.slug}/applications/${appId}/interviews/${r.id}`}
+                          className="rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-semibold text-xs px-4 py-2 transition-colors no-underline flex items-center gap-1.5 border border-teal-200"
+                        >
+                          View Evaluation & Defense
+                          <Arrow size={14} />
+                        </Link>
+                      ) : r.status === "SCHEDULED" ? (
+                        <Link
+                          to={`/${tenant.slug}/applications/${appId}/interviews/${r.id}`}
+                          className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-4 py-2 transition-colors no-underline flex items-center gap-1.5 shadow-xs"
+                        >
+                          Join Scheduled Room
+                          <Arrow size={14} />
+                        </Link>
+                      ) : r.status === "ASSIGNMENT_SUBMITTED" ? (
+                        <Link
+                          to={`/${tenant.slug}/applications/${appId}/interviews/${r.id}`}
+                          className="rounded-xl bg-brand text-white font-semibold text-xs px-4 py-2 hover:bg-brand-hover transition-colors no-underline flex items-center gap-1.5 shadow-xs"
+                        >
+                          Select Defense Slot
+                          <Arrow size={14} />
+                        </Link>
+                      ) : (
+                        <Link
+                          to={`/${tenant.slug}/applications/${appId}/interviews/${r.id}`}
+                          className="rounded-xl bg-brand text-white font-semibold text-xs px-4 py-2 hover:bg-brand-hover transition-colors no-underline flex items-center gap-1.5 shadow-xs"
+                        >
+                          {r.type === "ASSIGNMENT_DEFENSE" || r.type === "LEADERSHIP_SCENARIO"
+                            ? "Start Practical Assignment"
+                            : "Select Interview Slot"}
+                          <Arrow size={14} />
+                        </Link>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -45,6 +45,45 @@ export function InterviewPage() {
       } catch {}
       return "cmwssnj7e0003vnvsanhlfhqg";
     })();
+  const candidateInfo = useMemo(() => {
+    let name = "praveen Nobi";
+    let email = "netopsysai@gmail.com";
+    let jobTitle = "Ai Ml";
+    try {
+      const raw = localStorage.getItem("bh_admin_applications");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const app = parsed.find((a: any) => a.id === appId) || parsed[0];
+          if (app.candidateName) name = app.candidateName;
+          if (app.candidateEmail || app.email) email = app.candidateEmail || app.email;
+          if (app.jobTitle) jobTitle = app.jobTitle;
+        }
+      }
+    } catch {}
+    return { name, email, jobTitle };
+  }, [appId]);
+
+  // Check status of all rounds for prerequisite validation
+  const [roundsStatus, setRoundsStatus] = useState(() => {
+    let r1Done = false;
+    let r2Done = false;
+    let r3Done = false;
+    try {
+      const raw = localStorage.getItem("bh_admin_interviews");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const r1 = parsed[`${appId}_round-1`] || parsed["round-1"];
+        const r2 = parsed[`${appId}_round-2`] || parsed["round-2"];
+        const r3 = parsed[`${appId}_round-3`] || parsed["round-3"];
+        if (r1?.status === "COMPLETED") r1Done = true;
+        if (r2?.status === "COMPLETED") r2Done = true;
+        if (r3?.status === "COMPLETED") r3Done = true;
+      }
+    } catch {}
+    return { r1Done, r2Done, r3Done };
+  });
+
   const q = useInterview(tenant.slug, roundId);
 
   // Active sub-tab in interview workspace
@@ -142,28 +181,52 @@ export function InterviewPage() {
     }
   }, [isRound1, isRound3, submissionText]);
 
-  // Days for Slot Booking
+  // Chronological Days for Slot Booking with Timeline Validation
   const availableDays = useMemo(() => {
-    const today = new Date();
-    return [0, 1, 2, 3].map((offset) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() + offset);
+    const now = new Date();
+    // Round 1 starts from today (Day 0), Round 2 starts from Day 1, Round 3 starts from Day 2
+    const baseOffset = isRound3 ? 2 : isRound2 ? 1 : 0;
+
+    return [0, 1, 2, 3].map((i) => {
+      const offset = baseOffset + i;
+      const d = new Date(now);
+      d.setDate(now.getDate() + offset);
+
+      const isToday = d.toDateString() === now.toDateString();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+      const baseSlots = [
+        { label: "10:00 AM", startHour: 10, startMin: 0 },
+        { label: "11:30 AM", startHour: 11, startMin: 30 },
+        { label: "02:00 PM", startHour: 14, startMin: 0 },
+        { label: "03:30 PM", startHour: 15, startMin: 30 },
+        { label: "05:00 PM", startHour: 17, startMin: 0 },
+      ];
+
+      // Filter slots for today: must be at least 20 minutes in future
+      const timeSlots = baseSlots.map((slot) => {
+        const slotMinutes = slot.startHour * 60 + slot.startMin;
+        const isPast = isToday && slotMinutes <= currentMinutes + 20;
+        return {
+          ...slot,
+          disabled: isPast,
+        };
+      });
+
+      const activeSlotsCount = timeSlots.filter((s) => !s.disabled).length;
+
       return {
         key: d.toDateString(),
         date: d.toISOString(),
         weekday: d.toLocaleDateString("en-US", { weekday: "short" }),
         dayNum: d.getDate(),
         month: d.toLocaleDateString("en-US", { month: "short" }),
-        timeSlots: [
-          { label: "10:00 AM", startHour: 10, startMin: 0 },
-          { label: "11:30 AM", startHour: 11, startMin: 30 },
-          { label: "02:00 PM", startHour: 14, startMin: 0 },
-          { label: "03:30 PM", startHour: 15, startMin: 30 },
-          { label: "05:00 PM", startHour: 17, startMin: 0 },
-        ],
+        timeSlots,
+        activeSlotsCount,
+        isToday,
       };
     });
-  }, []);
+  }, [isRound2, isRound3]);
 
   const curDay = availableDays[selectedDayIndex] ?? availableDays[0]!;
 
@@ -173,9 +236,12 @@ export function InterviewPage() {
     try {
       const res = await fetch(`/api/t/${tenant.slug}/ai-evaluate-assignment`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-verity-csrf": "1",
+        },
         body: JSON.stringify({
-          jobTitle: "Software Developer",
+          jobTitle: candidateInfo.jobTitle,
           taskTitle: defaultTitle,
           requirements: isRound1
             ? "Event-driven high-concurrency ingestion, idempotent processing, schema design, fault tolerance."
@@ -183,7 +249,7 @@ export function InterviewPage() {
           submissionText,
           codeSnippet,
           repoUrl,
-          candidateName: "Rahul Sharma",
+          candidateName: candidateInfo.name,
           roundNumber: sequence,
         }),
       });
@@ -289,10 +355,10 @@ export function InterviewPage() {
 
       // Dispatch confirmation email
       await sendEmailNotification({
-        to: "rahul.sharma@example.com",
-        recipientName: "Rahul Sharma",
+        to: candidateInfo.email,
+        recipientName: candidateInfo.name,
         stage: "INTERVIEW",
-        jobTitle: "Software Developer",
+        jobTitle: candidateInfo.jobTitle,
         portalPath: `/${tenant.slug}/applications/${appId}/interviews/${roundId}`,
         tenantSlug: tenant.slug,
         roundTitle: defaultTitle,
@@ -302,6 +368,13 @@ export function InterviewPage() {
           startIso
         )} at ${selectedTimeSlot} (${f.tzName()}). You can join your LiveKit RTC interview room directly from the candidate portal.`,
       });
+
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(
+        new CustomEvent("bh_application_updated", {
+          detail: { appId, roundId, status: "SCHEDULED" },
+        })
+      );
     } catch (e) {
       console.warn("Slot storage error:", e);
     }
@@ -328,28 +401,40 @@ export function InterviewPage() {
       if (isRound1) {
         // Unlock Round 2
         await sendEmailNotification({
-          to: "rahul.sharma@example.com",
-          recipientName: "Rahul Sharma",
+          to: candidateInfo.email,
+          recipientName: candidateInfo.name,
           stage: "INTERVIEW",
-          jobTitle: "Software Developer",
+          jobTitle: candidateInfo.jobTitle,
           portalPath: `/${tenant.slug}/applications/${appId}/interviews/round-2`,
           tenantSlug: tenant.slug,
           roundTitle: "Round 2: Live Technical & System Deep-Dive",
           roundNumber: 2,
         });
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new CustomEvent("bh_application_updated", {
+            detail: { appId, roundId: "round-1", status: "COMPLETED" },
+          })
+        );
         navigate(`/${tenant.slug}/applications/${appId}/interviews/round-2`);
       } else if (isRound2) {
         // Unlock Round 3
         await sendEmailNotification({
-          to: "rahul.sharma@example.com",
-          recipientName: "Rahul Sharma",
+          to: candidateInfo.email,
+          recipientName: candidateInfo.name,
           stage: "INTERVIEW",
-          jobTitle: "Software Developer",
+          jobTitle: candidateInfo.jobTitle,
           portalPath: `/${tenant.slug}/applications/${appId}/interviews/round-3`,
           tenantSlug: tenant.slug,
           roundTitle: "Round 3: Leadership & Product Strategy",
           roundNumber: 3,
         });
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new CustomEvent("bh_application_updated", {
+            detail: { appId, roundId: "round-2", status: "COMPLETED" },
+          })
+        );
         navigate(`/${tenant.slug}/applications/${appId}/interviews/round-3`);
       } else if (isRound3) {
         // Transition application to OFFER
@@ -365,10 +450,10 @@ export function InterviewPage() {
         }
 
         await sendEmailNotification({
-          to: "rahul.sharma@example.com",
-          recipientName: "Rahul Sharma",
+          to: candidateInfo.email,
+          recipientName: candidateInfo.name,
           stage: "OFFER",
-          jobTitle: "Software Developer",
+          jobTitle: candidateInfo.jobTitle,
           portalPath: `/${tenant.slug}/applications/${appId}/offer`,
           tenantSlug: tenant.slug,
           customHeading: "Congratulations! You have an official job offer from Brutallyhired",
@@ -376,6 +461,12 @@ export function InterviewPage() {
             "Following your outstanding performance across all 3 technical and leadership interview rounds, we are thrilled to formally extend an offer of employment. Please review your terms, compensation package, and sign in the candidate portal.",
         });
 
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new CustomEvent("bh_application_updated", {
+            detail: { appId, stage: "OFFER" },
+          })
+        );
         navigate(`/${tenant.slug}/applications/${appId}/offer`);
       }
     } catch (e) {
@@ -412,6 +503,51 @@ export function InterviewPage() {
           </Pill>
         </div>
       </div>
+
+      {/* Sequential Round Prerequisite Notice */}
+      {isRound2 && !roundsStatus.r1Done && (
+        <div className="card p-4 rounded-2xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500 text-white font-bold text-sm">
+              !
+            </span>
+            <div>
+              <p className="text-sm font-bold text-amber-950">Round 1 Practical & Defense Pending</p>
+              <p className="text-xs text-amber-900/80">
+                You must complete and pass Round 1 before your Round 2 live session.
+              </p>
+            </div>
+          </div>
+          <Link
+            to={`/${tenant.slug}/applications/${appId}/interviews/round-1`}
+            className="rounded-xl bg-amber-700 text-white font-semibold text-xs px-4 py-2 hover:bg-amber-800 no-underline"
+          >
+            Go to Round 1 →
+          </Link>
+        </div>
+      )}
+
+      {isRound3 && !roundsStatus.r2Done && (
+        <div className="card p-4 rounded-2xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500 text-white font-bold text-sm">
+              !
+            </span>
+            <div>
+              <p className="text-sm font-bold text-amber-950">Round 2 Live Technical Deep-Dive Pending</p>
+              <p className="text-xs text-amber-900/80">
+                You must complete and pass Round 2 before entering the Round 3 executive panel.
+              </p>
+            </div>
+          </div>
+          <Link
+            to={`/${tenant.slug}/applications/${appId}/interviews/round-2`}
+            className="rounded-xl bg-amber-700 text-white font-semibold text-xs px-4 py-2 hover:bg-amber-800 no-underline"
+          >
+            Go to Round 2 →
+          </Link>
+        </div>
+      )}
 
       {/* Tabs Navigation */}
       <div className="flex border-b border-line gap-2 pt-2">
@@ -655,7 +791,7 @@ export function InterviewPage() {
                 {evaluation.interviewDefenseQuestions.length > 0 && (
                   <div className="rounded-xl bg-white p-3.5 border border-teal-200/80">
                     <strong className="text-teal-900 text-xs block mb-1">
-                      Expected Live Defense Questions from Arun K. & Panel:
+                      Expected Live Defense Questions from {isRound3 ? "Tanuja HR, Ananya R. & Executive Panel" : isRound2 ? "Chandra S. & Architecture Panel" : "Arun K. & Technical Panel"}:
                     </strong>
                     <ol className="list-decimal pl-4 space-y-1 text-xs text-teal-950">
                       {evaluation.interviewDefenseQuestions.map((q, idx) => (
@@ -725,10 +861,14 @@ export function InterviewPage() {
                     <span
                       className={clsx(
                         "text-[10px] font-medium",
-                        selectedDayIndex === idx ? "text-white/80" : "text-teal-700"
+                        selectedDayIndex === idx
+                          ? "text-white/80"
+                          : d.activeSlotsCount > 0
+                          ? "text-teal-700"
+                          : "text-ink-muted/70"
                       )}
                     >
-                      {d.timeSlots.length} Slots
+                      {d.activeSlotsCount > 0 ? `${d.activeSlotsCount} Slots` : "Past / Full"}
                     </span>
                   </button>
                 ))}
@@ -743,23 +883,35 @@ export function InterviewPage() {
                   {f.longDate(curDay.date)} ({f.tzName()})
                 </span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
-                {curDay.timeSlots.map((s) => (
-                  <button
-                    key={s.label}
-                    type="button"
-                    onClick={() => setSelectedTimeSlot(s.label)}
-                    className={clsx(
-                      "min-h-[46px] rounded-xl border text-xs font-semibold transition-all",
-                      selectedTimeSlot === s.label
-                        ? "border-teal-600 bg-teal-50 text-teal-800 ring-2 ring-teal-600"
-                        : "border-line-2 bg-white text-ink hover:border-line hover:bg-canvas"
-                    )}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
+              {curDay.activeSlotsCount === 0 ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+                  All scheduled interview slots for today have ended or have closed for booking. Please select tomorrow or an upcoming date above to view available time slots.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                  {curDay.timeSlots.map((s) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      disabled={s.disabled}
+                      onClick={() => !s.disabled && setSelectedTimeSlot(s.label)}
+                      className={clsx(
+                        "min-h-[46px] rounded-xl border text-xs font-semibold transition-all flex flex-col items-center justify-center py-1",
+                        s.disabled
+                          ? "border-line-soft bg-canvas text-ink-muted/40 cursor-not-allowed line-through"
+                          : selectedTimeSlot === s.label
+                          ? "border-teal-600 bg-teal-50 text-teal-800 ring-2 ring-teal-600"
+                          : "border-line-2 bg-white text-ink hover:border-line hover:bg-canvas"
+                      )}
+                    >
+                      <span>{s.label}</span>
+                      {s.disabled && (
+                        <span className="text-[9px] no-underline font-normal text-ink-muted/60">Passed</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Booking Confirmation Card */}

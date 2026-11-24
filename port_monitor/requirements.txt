@@ -1,0 +1,12 @@
+# Shared dependencies
+usb-monitor==1.23
+
+# Windows hardware inventory / status queries
+wmi>=1.5.1; sys_platform == "win32"
+pywin32>=306; sys_platform == "win32"
+
+# Linux device support
+pyudev>=0.24; sys_platform == "linux"
+
+# macOS external display enumeration
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
