@@ -1,6 +1,6 @@
 import type { ApplicationOverview } from "@verity/shared";
 import { clsx } from "clsx";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/feedback";
@@ -40,111 +40,234 @@ const ROUND_DETAILS = [
 export function JourneyTrack({ track }: { track: ApplicationOverview["track"] | any[] }) {
   const { t } = useTranslation();
   const f = useFormat();
-  const [previewRounds, setPreviewRounds] = useState(true);
-  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [isInterviewExpanded, setIsInterviewExpanded] = useState(false);
   const [selectedRound, setSelectedRound] = useState<typeof ROUND_DETAILS[0] | null>(null);
 
+  const displayedTrack = useMemo(() => {
+    if (!Array.isArray(track)) return [];
+    const result: Array<{
+      key: string;
+      label: string;
+      state: "done" | "current" | "upcoming";
+      at: string | null;
+      stepNumber: string;
+      isInterviewStep?: boolean;
+      isSubStep?: boolean;
+      isCompact?: boolean;
+      subLabel?: string;
+      roundDetail?: typeof ROUND_DETAILS[0];
+    }> = [];
+
+    let stepNum = 1;
+
+    for (const m of track) {
+      const isInterview = m.key === "INTERVIEW_SCHEDULE" || m.key === "INTERVIEWS";
+      const currentNum = String(stepNum++);
+
+      result.push({
+        key: m.key,
+        label: (m as any).label || t(`milestone.${m.key}`),
+        state: m.state,
+        at: m.at,
+        stepNumber: currentNum,
+        isInterviewStep: isInterview,
+        isCompact: isInterviewExpanded && !isInterview,
+      });
+
+      if (isInterview && isInterviewExpanded) {
+        const round1State = (m as any).rounds?.[0]?.state || (m.state === "current" ? "current" : m.state === "done" ? "done" : "upcoming");
+        const round2State = (m as any).rounds?.[1]?.state || (m.state === "done" ? "done" : "upcoming");
+        const round3State = (m as any).rounds?.[2]?.state || (m.state === "done" ? "done" : "upcoming");
+
+        result.push(
+          {
+            key: "INTERVIEW_ROUND_1",
+            label: "Round 1",
+            subLabel: "Technical Screening",
+            state: round1State,
+            at: null,
+            stepNumber: `${currentNum}.1`,
+            isSubStep: true,
+            isCompact: false,
+            roundDetail: ROUND_DETAILS[0],
+          },
+          {
+            key: "INTERVIEW_ROUND_2",
+            label: "Round 2",
+            subLabel: "System Architecture",
+            state: round2State,
+            at: null,
+            stepNumber: `${currentNum}.2`,
+            isSubStep: true,
+            isCompact: false,
+            roundDetail: ROUND_DETAILS[1],
+          },
+          {
+            key: "INTERVIEW_ROUND_3",
+            label: "Round 3",
+            subLabel: "Leadership Fit",
+            state: round3State,
+            at: null,
+            stepNumber: `${currentNum}.3`,
+            isSubStep: true,
+            isCompact: false,
+            roundDetail: ROUND_DETAILS[2],
+          }
+        );
+      }
+    }
+
+    return result;
+  }, [track, isInterviewExpanded, t]);
+
   if (!Array.isArray(track) || track.length === 0) return null;
+
   return (
-    <div className="overflow-x-auto pb-2">
-      <ol aria-label={t("overview.progressLabel")} className="grid min-w-[780px]" style={{ gridTemplateColumns: `repeat(${track.length}, minmax(0, 1fr))` }}>
-        {track.map((m, i) => (
-          <li key={m.key || i} data-state={m.state} className="track-item relative flex flex-col gap-2 pr-2.5" aria-current={m.state === "current" ? "step" : undefined}>
-            <span
+    <div className="w-full overflow-x-auto pb-1">
+      <style>{`
+        .track-item-compact::after {
+          left: 44px !important;
+          right: 4px !important;
+        }
+      `}</style>
+      <ol
+        aria-label={t("overview.progressLabel")}
+        className="grid w-full transition-all duration-300"
+        style={{
+          gridTemplateColumns: isInterviewExpanded
+            ? "minmax(55px, 0.65fr) minmax(60px, 0.7fr) minmax(70px, 0.75fr) minmax(65px, 0.7fr) minmax(130px, 1.4fr) minmax(110px, 1.2fr) minmax(110px, 1.2fr) minmax(110px, 1.2fr) minmax(55px, 0.6fr) minmax(65px, 0.7fr)"
+            : `repeat(${displayedTrack.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {displayedTrack.map((m) => {
+          if (m.isInterviewStep) {
+            return (
+              <li
+                key={m.key}
+                data-state={m.state}
+                className="track-item relative flex flex-col gap-2 pr-2 cursor-pointer select-none group"
+                aria-current={m.state === "current" ? "step" : undefined}
+                aria-expanded={isInterviewExpanded}
+                onClick={() => setIsInterviewExpanded((prev) => !prev)}
+                title={isInterviewExpanded ? "Click to collapse interview rounds" : "Click to view 3 interview rounds (5.1, 5.2, 5.3)"}
+              >
+                <span
+                  className={clsx(
+                    "flex h-10 w-10 items-center justify-center rounded-full border-2 font-display text-sm font-bold transition-all group-hover:scale-105",
+                    m.state === "done" && "border-ok bg-ok text-white",
+                    m.state === "current" && "border-brand bg-brand text-brand-fg shadow-[0_0_0_6px_rgb(var(--brand)/0.12)]",
+                    m.state === "upcoming" && "border-[#E4E9F0] bg-[#F1F4F8] text-ink-muted group-hover:border-brand/50",
+                  )}
+                >
+                  {m.state === "done" ? <Check size={18} /> : m.stepNumber}
+                </span>
+                <span
+                  className={clsx(
+                    "text-sm whitespace-nowrap transition-colors flex items-center gap-1",
+                    m.state === "upcoming" ? "font-medium text-ink-muted group-hover:text-brand" : "font-semibold",
+                    m.state === "current" && "text-brand"
+                  )}
+                >
+                  <span>{m.label}</span>
+                  <span className="text-[11px] font-bold text-brand ml-0.5">
+                    {isInterviewExpanded ? "▴" : "▾"}
+                  </span>
+                </span>
+                
+              </li>
+            );
+          }
+
+          if (m.isSubStep) {
+            return (
+              <li
+                key={m.key}
+                data-state={m.state}
+                className="track-item relative flex flex-col gap-2 pr-2 cursor-pointer select-none group"
+                onClick={() => {
+                  if (m.roundDetail) setSelectedRound(m.roundDetail);
+                }}
+                title={`Click to view ${m.label} (${m.stepNumber}) details`}
+              >
+                <span
+                  className={clsx(
+                    "flex h-10 w-10 items-center justify-center rounded-full border-2 font-display text-xs font-bold transition-all group-hover:scale-105",
+                    m.state === "done" && "border-ok bg-ok text-white",
+                    m.state === "current" && "border-brand bg-brand text-brand-fg shadow-[0_0_0_6px_rgb(var(--brand)/0.12)]",
+                    m.state === "upcoming" && "border-[#E4E9F0] bg-[#F1F4F8] text-ink-muted group-hover:border-brand/50 group-hover:text-brand",
+                  )}
+                >
+                  {m.state === "done" ? <Check size={16} /> : m.stepNumber}
+                </span>
+                <span
+                  className={clsx(
+                    "text-sm whitespace-nowrap transition-colors",
+                    m.state === "upcoming" ? "font-medium text-ink-muted group-hover:text-brand" : "font-semibold",
+                    m.state === "current" && "text-brand"
+                  )}
+                >
+                  {m.label}
+                </span>
+                <span className="min-h-4 text-xs text-ink-muted group-hover:text-brand truncate">
+                  {m.subLabel}
+                </span>
+              </li>
+            );
+          }
+
+          return (
+            <li
+              key={m.key}
+              data-state={m.state}
               className={clsx(
-                "flex h-10 w-10 items-center justify-center rounded-full border-2 font-display text-sm font-bold transition-all",
-                m.state === "done" && "border-ok bg-ok text-white",
-                m.state === "current" && "border-brand bg-brand text-brand-fg shadow-[0_0_0_6px_rgb(var(--brand)/0.12)]",
-                m.state === "upcoming" && "border-[#E4E9F0] bg-[#F1F4F8] text-ink-muted",
+                "track-item relative flex flex-col gap-2 pr-2 transition-all",
+                m.isCompact && "track-item-compact cursor-pointer select-none group"
               )}
+              aria-current={m.state === "current" ? "step" : undefined}
+              onClick={() => {
+                if (isInterviewExpanded) {
+                  setIsInterviewExpanded(false);
+                }
+              }}
+              title={m.isCompact ? `Click to return to normal view (${m.label})` : undefined}
             >
-              {m.state === "done" ? <Check size={18} /> : i + 1}
-            </span>
-            <span className={clsx("text-sm whitespace-nowrap", m.state === "upcoming" ? "font-medium text-ink-muted" : "font-semibold", m.state === "current" && "text-brand")}>
-              {(m as any).label || t(`milestone.${m.key}`)}
-            </span>
-            <span className="min-h-4 text-xs text-ink-muted">{m.at ? f.dayMonth(m.at) : ""}</span>
-
-            {/* When it is in interview schedule, Round 1, Round 2, Round 3 are visible with testing preview */}
-            {(m.key === "INTERVIEW_SCHEDULE" || m.key === "INTERVIEWS") && (
-              <div className="mt-1 flex flex-col gap-1.5">
-                {/* Testing Preview Toggle Button */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewRounds((prev) => !prev);
-                    }}
-                    className="inline-flex items-center gap-1 rounded bg-brand/10 hover:bg-brand/20 px-2 py-0.5 text-[11px] font-semibold text-brand transition-colors cursor-pointer border border-brand/20 shadow-xs"
-                    title="Toggle rounds preview for testing"
-                  >
-                    <Eye size={12} />
-                    <span>{previewRounds ? "Hide preview" : "Preview rounds"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewModalOpen(true);
-                    }}
-                    className="text-[10px] text-ink-muted hover:text-brand underline cursor-pointer"
-                  >
-                    View details
-                  </button>
-                </div>
-
-                {/* Visible Rounds (active in interview schedule stage or when preview is toggled) */}
-                {(m.state === "current" || previewRounds || (m as any).showRounds) && (
-                  <div className="flex flex-wrap items-center gap-1">
-                    {(
-                      (m as any).rounds || [
-                        { name: "Round 1", state: m.state === "current" ? "current" : "upcoming" },
-                        { name: "Round 2", state: "upcoming" },
-                        { name: "Round 3", state: "upcoming" },
-                      ]
-                    ).map((r: { name: string; state?: "done" | "current" | "upcoming" }) => (
-                      <button
-                        key={r.name}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const found = ROUND_DETAILS.find((rd) => rd.name === r.name);
-                          if (found) {
-                            setSelectedRound(found);
-                          } else {
-                            setPreviewModalOpen(true);
-                          }
-                        }}
-                        title={`Click to preview ${r.name} details`}
-                        className={clsx(
-                          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-all cursor-pointer hover:opacity-85 shadow-xs",
-                          r.state === "done" && "bg-emerald-50 text-emerald-700 border border-emerald-200",
-                          r.state === "current" && "bg-brand/10 text-brand border border-brand/30 ring-1 ring-brand/20",
-                          (!r.state || r.state === "upcoming") && "bg-slate-100 text-ink-2 border border-slate-200 hover:border-brand/40",
-                        )}
-                      >
-                        {r.state === "done" && <Check size={9} />}
-                        {r.name}
-                      </button>
-                    ))}
-                  </div>
+              <span
+                className={clsx(
+                  "flex h-10 w-10 items-center justify-center rounded-full border-2 font-display text-sm font-bold transition-all",
+                  m.state === "done" && "border-ok bg-ok text-white",
+                  m.state === "current" && "border-brand bg-brand text-brand-fg shadow-[0_0_0_6px_rgb(var(--brand)/0.12)]",
+                  m.state === "upcoming" && "border-[#E4E9F0] bg-[#F1F4F8] text-ink-muted",
+                  m.isCompact && "group-hover:scale-105 group-hover:border-brand/50"
                 )}
-              </div>
-            )}
-          </li>
-        ))}
+              >
+                {m.state === "done" ? <Check size={18} /> : m.stepNumber}
+              </span>
+              <span
+                className={clsx(
+                  "transition-colors",
+                  m.isCompact
+                    ? "text-xs font-medium truncate group-hover:text-brand max-w-full"
+                    : "text-sm whitespace-nowrap",
+                  m.state === "upcoming" ? "text-ink-muted" : "font-semibold",
+                  m.state === "current" && "text-brand"
+                )}
+                title={m.label}
+              >
+                {m.label}
+              </span>
+              <span className="min-h-4 text-xs text-ink-muted">
+                {m.at ? f.dayMonth(m.at) : ""}
+              </span>
+            </li>
+          );
+        })}
       </ol>
 
-      {/* Modal: Interview Rounds Preview for Testing */}
+      {/* Modal: Interview Round Details */}
       <Modal
-        open={previewModalOpen || Boolean(selectedRound)}
-        onClose={() => {
-          setPreviewModalOpen(false);
-          setSelectedRound(null);
-        }}
-        title="Interview Schedule — Rounds Preview (Testing Mode)"
+        open={Boolean(selectedRound)}
+        onClose={() => setSelectedRound(null)}
+        title={selectedRound ? `${selectedRound.name} — ${selectedRound.title}` : "Interview Schedule — Rounds"}
         subtitle="Evaluation rounds configured for Interview Schedule stage"
         maxWidth="max-w-2xl"
       >
@@ -152,7 +275,7 @@ export function JourneyTrack({ track }: { track: ApplicationOverview["track"] | 
           <div className="flex items-center gap-2 rounded-xl bg-brand/5 border border-brand/20 p-3 text-xs text-brand-ink">
             <Eye size={16} className="text-brand shrink-0" />
             <span>
-              <strong>Testing Preview:</strong> These are the 3 evaluation rounds scheduled for candidates at the <strong>Interview schedule</strong> stage.
+              Evaluation rounds scheduled for candidates at the <strong>Interview schedule</strong> stage.
             </span>
           </div>
 
@@ -207,10 +330,7 @@ export function JourneyTrack({ track }: { track: ApplicationOverview["track"] | 
             <Button
               type="button"
               variant="ghost"
-              onClick={() => {
-                setPreviewModalOpen(false);
-                setSelectedRound(null);
-              }}
+              onClick={() => setSelectedRound(null)}
             >
               Close
             </Button>

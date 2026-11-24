@@ -134,7 +134,12 @@ export function OfferPage() {
       <section className="flex flex-wrap items-end justify-between gap-6 rounded-3xl bg-ink p-8 md:p-10">
         <div className="flex max-w-[720px] flex-col gap-3">
           <span className="label-caps text-[#7FD1C4]">{t("offer.heroLabel", { job: overview.data?.job.title ?? "Software Developer" })}</span>
-          <h1 className="text-[34px] leading-tight text-white md:text-[40px]">{firstName ? t("offer.title", { name: firstName }) : t("offer.titleFallback")}</h1>
+          <h1
+            className="text-[34px] leading-tight text-white md:text-[40px] font-serif"
+            style={{ fontFamily: '"DM Serif Display", Georgia, serif' }}
+          >
+            {firstName ? t("offer.title", { name: firstName }) : t("offer.titleFallback")}
+          </h1>
           <p className="text-base leading-relaxed text-[#C9D3E0]">{t("offer.sub")}</p>
         </div>
         {o.status === "SENT" && (

@@ -17,10 +17,91 @@ function ApplyingFor({ jobRef }: { jobRef: string | null }) {
   const tenant = useTenantCtx();
   const { t } = useTranslation();
   const job = useJob(tenant.slug, jobRef ?? "");
-  const title = job.data?.title ?? "Senior Process Engineer – Solvent Recovery";
-  const meta = job.data
-    ? [tenant.name, job.data.location, job.data.employmentType].filter(Boolean).join(" · ")
-    : `${tenant.name} · Dahej, Gujarat · Full-time`;
+
+  // Look up matching job from localStorage (jobs created/published in Admin)
+  let localJob: any = null;
+  if (jobRef) {
+    try {
+      const saved = localStorage.getItem("bh_admin_jobs");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const norm = (s: string) =>
+            s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+          const target = norm(jobRef);
+          localJob = parsed.find(
+            (j: any) =>
+              j.externalRef === jobRef ||
+              j.id === jobRef ||
+              (j.externalRef && norm(j.externalRef) === target) ||
+              (j.title && norm(j.title) === target) ||
+              (j.title && j.title.toLowerCase() === jobRef.toLowerCase())
+          );
+        }
+      }
+    } catch {}
+
+    // Check draft jobs if not found in published jobs
+    if (!localJob) {
+      try {
+        const draft = localStorage.getItem("bh_admin_job_draft");
+        if (draft) {
+          const parsedDraft = JSON.parse(draft);
+          if (parsedDraft?.title) {
+            const norm = (s: string) =>
+              s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            if (norm(parsedDraft.title) === norm(jobRef)) {
+              localJob = parsedDraft;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Check application draft if any
+    if (!localJob) {
+      try {
+        const draftKey = `bh_draft_${tenant.slug}_${jobRef}`;
+        const savedAppId = localStorage.getItem(draftKey);
+        if (savedAppId) {
+          const draftStr = localStorage.getItem(`bh_draft_${savedAppId}`);
+          if (draftStr) {
+            const parsed = JSON.parse(draftStr);
+            if (parsed?.job?.title) {
+              localJob = parsed.job;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // Fallback to title-casing the jobRef from the URL
+  const formattedRefTitle = jobRef
+    ? jobRef
+        .replace(/[-_]+/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .trim()
+    : "";
+
+  const title =
+    job.data?.title ||
+    localJob?.title ||
+    formattedRefTitle ||
+    "Open Position";
+
+  const location =
+    job.data?.location ||
+    localJob?.location ||
+    "Remote / Hybrid";
+
+  const employmentType =
+    job.data?.employmentType ||
+    localJob?.workplaceType ||
+    localJob?.employmentType ||
+    "Full-time";
+
+  const meta = [tenant.name, location, employmentType].filter(Boolean).join(" · ");
 
   return (
     <aside className="flex flex-[0_1_420px] flex-col gap-5">
@@ -68,11 +149,19 @@ export function SignInPage() {
   const navigate = useNavigate();
   const me = useMe();
   const providers = useProviders();
+  const rawReturnTo = params.get("returnTo") ?? "";
   const defaultPath = tenant.slug ? `/${tenant.slug}/applications` : "/applications";
-  const parsed = returnToSchema.safeParse(params.get("returnTo") ?? defaultPath);
+  const parsed = returnToSchema.safeParse(rawReturnTo || defaultPath);
   const returnTo = parsed.success ? parsed.data : defaultPath;
-  const applyMatch = /^\/[^/]+\/apply\/([^/?]+)/.exec(returnTo);
-  const jobRef = applyMatch ? decodeURIComponent(applyMatch[1]!) : null;
+  const pathMatch =
+    /(?:^|\/)apply\/([^/?#]+)/.exec(rawReturnTo) ||
+    /(?:^|\/)apply\/([^/?#]+)/.exec(returnTo) ||
+    /(?:^|\/)apply\/([^/?#]+)/.exec(window.location.pathname);
+  const jobRef =
+    params.get("job") ||
+    params.get("jobRef") ||
+    params.get("ref") ||
+    (pathMatch ? decodeURIComponent(pathMatch[1]!) : null);
 
   useEffect(() => {
     applyBrand(tenant.brandColor || "#0F5E59");

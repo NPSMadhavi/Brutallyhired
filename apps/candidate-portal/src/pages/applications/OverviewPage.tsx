@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
-import { useMe, useOverview, useWithdraw } from "@/api/hooks";
+import { useMe, useOverview, useProfile, useWithdraw } from "@/api/hooks";
 import { NextStepCard } from "@/components/journey/NextStep";
 import { JourneyTrack } from "@/components/journey/JourneyTrack";
 import { Updates } from "@/components/journey/Updates";
@@ -122,10 +122,11 @@ function buildCandidateJourneyTrack(stage: string, submittedAt?: string | null) 
 
 export function OverviewPage() {
   const tenant = useTenantCtx();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const f = useFormat();
   const { appId = "" } = useParams();
   const me = useMe();
+  const profile = useProfile(tenant.slug);
   const q = useOverview(tenant.slug, appId);
   const withdraw = useWithdraw(tenant.slug, appId);
   const [confirming, setConfirming] = useState(false);
@@ -229,15 +230,61 @@ export function OverviewPage() {
   if (q.isError && !o) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   if (!o) return <PageLoader />;
   const base = `/${tenant.slug}/applications/${o.id}`;
-  const firstName = me.data?.displayName?.split(" ")[0];
+  let candidateNameFallback = "";
+  if (!me.data?.displayName && !profile.data?.profile?.firstName) {
+    try {
+      const localApps = localStorage.getItem("bh_admin_applications");
+      if (localApps) {
+        const parsed = JSON.parse(localApps);
+        if (Array.isArray(parsed)) {
+          const m = parsed.find((a: any) => a.id === appId);
+          if (m?.candidateName) candidateNameFallback = m.candidateName.trim().split(/\s+/)[0];
+        }
+      }
+    } catch {}
+  }
+  const firstName =
+    me.data?.displayName?.trim()?.split(/\s+/)[0] ||
+    profile.data?.profile?.firstName ||
+    profile.data?.displayName?.trim()?.split(/\s+/)[0] ||
+    candidateNameFallback ||
+    "";
   const canWithdraw = !o.closed && !["DRAFT", "HIRED"].includes(o.stage);
+  const now = new Date();
+  const weekday = new Intl.DateTimeFormat(i18n.language || "en", { weekday: "long" }).format(now);
 
   return (
     <>
-      <div className="flex flex-col gap-1.5">
-        <p className="text-[15px] text-ink-muted">{f.longDate(new Date())}</p>
-        <h1 className="text-[30px] leading-tight">{firstName ? t("overview.greeting", { name: firstName }) : t("overview.greetingFallback")}</h1>
-      </div>
+      <section className="flex flex-wrap items-end justify-between gap-6 rounded-3xl bg-ink p-8 md:p-10">
+        <div className="flex max-w-[720px] flex-col gap-3">
+          <h1
+            className="text-[34px] leading-tight text-white md:text-[40px] font-serif"
+            style={{ fontFamily: '"DM Serif Display", Georgia, serif' }}
+          >
+            {firstName ? (
+              <>
+                Hi {firstName},
+                <br />
+                Your journey starts here.
+              </>
+            ) : (
+              <>
+                Hi,
+                <br />
+                Your journey starts here.
+              </>
+            )}
+          </h1>
+          <p className="text-base leading-relaxed text-[#C9D3E0]">
+            Track your application, stay updated on your progress, and discover what comes next in your hiring journey.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-[13px] text-[#C9D3E0]">{weekday}</span>
+          <span className="font-display text-2xl font-bold text-white">{f.date(now)}</span>
+          <span className="rounded-full bg-[#7FD1C4]/15 px-2.5 py-1 text-xs font-semibold text-[#7FD1C4]">Today</span>
+        </div>
+      </section>
 
       <section className="card flex flex-col gap-8 md:p-8" aria-labelledby="app-h">
         <div className="flex flex-wrap items-start justify-between gap-4">

@@ -18,6 +18,7 @@ export default {
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         display: ['"Plus Jakarta Sans"', "Inter", "sans-serif"],
+        serif: ['"DM Serif Display"', "Georgia", "serif"],
       },
       borderRadius: { xl2: "20px" },
       boxShadow: { card: "0 1px 2px rgba(14,23,38,.04)", lift: "0 12px 32px rgba(14,23,38,.08)" },
