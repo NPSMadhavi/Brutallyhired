@@ -1075,7 +1075,13 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
               a.id === selectedCandidate.id ||
               (a.email && a.email.toLowerCase() === (selectedCandidate.email || "").toLowerCase())
             ) {
-              return { ...a, stage: "ASSESSMENT", score: Math.max(a.score || 0, 75) };
+              return {
+                ...a,
+                stage: "ASSESSMENT",
+                round1Assigned: true,
+                round1Link: secureLink,
+                score: Math.max(a.score || 0, 75),
+              };
             }
             return a;
           });
@@ -1144,7 +1150,13 @@ export function AssessmentRoundsStudio({ jobs, applications, tenant }: Assessmen
                 a.id === selectedCandidate.id ||
                 (a.email && a.email.toLowerCase() === candidateEmail.toLowerCase())
               ) {
-                return { ...a, stage: "ASSESSMENT", score: Math.max(a.score || 0, 75) };
+                return {
+                  ...a,
+                  stage: "ASSESSMENT",
+                  round1Assigned: true,
+                  round1Link: secureLink,
+                  score: Math.max(a.score || 0, 75),
+                };
               }
               return a;
             });

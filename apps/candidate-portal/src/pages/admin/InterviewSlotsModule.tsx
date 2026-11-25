@@ -760,6 +760,57 @@ export function InterviewSlotsModule({ jobs, applications, tenant }: InterviewSl
     await syncSlots(updated);
     setBookingSlot(null);
 
+    // Sync to bh_admin_interviews & candidate application
+    try {
+      const rawSched = localStorage.getItem("bh_admin_interviews");
+      let parsed: Record<string, any> = {};
+      if (rawSched) {
+        try {
+          const loaded = JSON.parse(rawSched);
+          if (loaded && !Array.isArray(loaded)) parsed = loaded;
+        } catch {}
+      }
+      const [sh = "10", sm = "00"] = slot.startTime.split(":");
+      const [eh = "11", em = "00"] = slot.endTime.split(":");
+      const sDate = new Date(`${slot.date}T${sh.padStart(2, "0")}:${sm.padStart(2, "0")}:00`);
+      const eDate = new Date(`${slot.date}T${eh.padStart(2, "0")}:${em.padStart(2, "0")}:00`);
+      const roundKey = `round-${selectedRound.roundNumber}`;
+      parsed[`${candidate.id}_${roundKey}`] = {
+        roundId: roundKey,
+        appId: candidate.id,
+        title: selectedRound.name,
+        startsAt: sDate.toISOString(),
+        endsAt: eDate.toISOString(),
+        status: "SCHEDULED",
+        panelists: slot.interviewerName,
+      };
+      parsed[roundKey] = parsed[`${candidate.id}_${roundKey}`];
+      localStorage.setItem("bh_admin_interviews", JSON.stringify(parsed));
+
+      const rawApps = localStorage.getItem("bh_admin_applications");
+      if (rawApps) {
+        const apps = JSON.parse(rawApps);
+        if (Array.isArray(apps)) {
+          const upApps = apps.map((a: any) =>
+            a.id === candidate.id
+              ? {
+                  ...a,
+                  stage: "INTERVIEW",
+                  round1Passed: selectedRound.roundNumber >= 2 ? true : a.round1Passed,
+                  round2Unlocked: selectedRound.roundNumber >= 2 ? true : a.round2Unlocked,
+                  round2SlotBooked: selectedRound.roundNumber === 2 ? true : a.round2SlotBooked,
+                }
+              : a
+          );
+          localStorage.setItem("bh_admin_applications", JSON.stringify(upApps));
+        }
+      }
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId: candidate.id } }));
+    } catch (err) {
+      console.warn("Sync error in InterviewSlotsModule:", err);
+    }
+
     // Send automatic booking confirmation email with meeting link
     try {
       const modeText = getMeetingModeLabel(slot.mode);

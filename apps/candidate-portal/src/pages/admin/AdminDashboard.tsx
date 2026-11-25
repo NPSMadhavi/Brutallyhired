@@ -45,7 +45,7 @@ import { applyBrand } from "@/lib/brand";
 import { initials } from "@/lib/format";
 import { generateJobDescription, generateJobDescriptionHtml } from "@/lib/jobGenerator";
 import { JobDescriptionEditor } from "./JobDescriptionEditor";
-import { BrutallyScoreModule, getScreeningCutoffThreshold } from "./BrutallyScoreModule";
+import { BrutallyScoreModule, getScreeningCutoffThreshold, getScreeningDeadlineDays, getStandardGlobalScreeningQuestions } from "./BrutallyScoreModule";
 import { AssessmentRoundsStudio, getSavedAssessmentRounds } from "./AssessmentRoundsStudio";
 import { InterviewSlotsModule } from "./InterviewSlotsModule";
 import { InterviewsModule } from "./InterviewsModule";
@@ -89,6 +89,7 @@ interface ApplicationItem {
   hardScore: number;
   preferredScore: number;
   resumeName?: string;
+  resumeUrl?: string;
   screeningDeadline?: string;
   rejectionReason?: string;
   holdReason?: string;
@@ -97,6 +98,44 @@ interface ApplicationItem {
   noticePeriod?: string;
   locationComfort?: string;
   resumeDataUrl?: string;
+  round1Assigned?: boolean;
+  round1Link?: string;
+  round1Submitted?: boolean;
+  round1Passed?: boolean;
+  round1Selected?: boolean;
+  round2Unlocked?: boolean;
+  round2SlotsSent?: boolean;
+  round2SlotBooked?: boolean;
+  round2ScheduledStart?: string;
+  round2ScheduledEnd?: string;
+  round2Link?: string;
+  round2AssessmentUrl?: string;
+  round2Submitted?: boolean;
+  round2Passed?: boolean;
+  round2SubmittedAt?: string;
+  round3Unlocked?: boolean;
+  testSubmittedAt?: string;
+  assessmentUrl?: string;
+  screeningTestSent?: boolean;
+  screeningTestSubmitted?: boolean;
+  screeningSentAt?: string;
+  screeningExpiresAt?: string;
+  lastScreeningReminderAt?: string;
+  screeningScore?: number;
+  screeningAnswers?: Array<{
+    questionId: string;
+    prompt: string;
+    type: string;
+    category?: string;
+    points: number;
+    earnedPoints: number;
+    answer: string;
+    isCorrect?: boolean;
+  }>;
+  screeningSubmittedAt?: string;
+  round1SlotsSent?: boolean;
+  round1Slots?: Array<{ id: string; label: string; isoStart: string }>;
+  round1BookedSlot?: { id: string; label: string; isoStart: string };
 }
 
 interface AssessmentSessionItem {
@@ -170,8 +209,8 @@ interface StaffItem {
 function getCandidateUploadedResume(app: ApplicationItem | null) {
   if (!app) {
     return {
-      url: "/resumes/Amirti_Tanuja_Round2_Task.pdf",
-      filename: "Amirti_Tanuja_Round2_Task.pdf",
+      url: "",
+      filename: "Resume.pdf",
     };
   }
 
@@ -179,7 +218,7 @@ function getCandidateUploadedResume(app: ApplicationItem | null) {
     app.resumeName ||
     (app.candidateName
       ? `${app.candidateName.replace(/\s+/g, "_")}_Resume.pdf`
-      : "Amirti_Tanuja_Round2_Task.pdf");
+      : "Candidate_Resume.pdf");
 
   if (app.resumeDataUrl) {
     return {
@@ -188,9 +227,45 @@ function getCandidateUploadedResume(app: ApplicationItem | null) {
     };
   }
 
-  // Use the verified original uploaded resume
+  if (app.resumeUrl) {
+    return {
+      url: app.resumeUrl,
+      filename,
+    };
+  }
+
+  try {
+    const draftRaw = localStorage.getItem(`bh_draft_${app.id}`);
+    if (draftRaw) {
+      const draft = JSON.parse(draftRaw);
+      if (draft.resumeDataUrl) {
+        return {
+          url: draft.resumeDataUrl as string,
+          filename: draft.resume?.name || filename,
+        };
+      }
+    }
+  } catch {}
+
+  try {
+    const lastRaw = localStorage.getItem("bh_last_uploaded_resume");
+    if (lastRaw) {
+      const last = JSON.parse(lastRaw);
+      if (
+        last.url &&
+        (!last.email || !app.email || last.email.toLowerCase() === app.email.toLowerCase()) &&
+        (!app.resumeName || last.filename === app.resumeName)
+      ) {
+        return {
+          url: last.url as string,
+          filename: last.filename || filename,
+        };
+      }
+    }
+  } catch {}
+
   return {
-    url: "/resumes/Amirti_Tanuja_Round2_Task.pdf",
+    url: "",
     filename: filename.endsWith(".pdf") ? filename : `${filename}.pdf`,
   };
 }
@@ -272,110 +347,7 @@ export function AdminDashboard() {
         // ignore parsing errors
       }
     }
-    return [
-      {
-        id: "app-101",
-        candidateName: "Rahul Sharma",
-        email: "rahul.sharma@example.com",
-        phone: "+91 98765 43210",
-        city: "Bangalore",
-        experience: "3 years",
-        jobTitle: "Software Developer",
-        department: "Engineering",
-        stage: "IN_REVIEW",
-        score: 88,
-        submittedAt: "2 hours ago",
-        notes: "Strong TypeScript, React, and backend API design experience. Excellent problem solver.",
-        hardScore: 50,
-        preferredScore: 38,
-        resumeName: "Rahul_Sharma_Resume.pdf",
-      },
-      {
-        id: "app-102",
-        candidateName: "Priya Nair",
-        email: "priya.nair@example.com",
-        phone: "+91 98450 11223",
-        city: "Visakhapatnam",
-        experience: "2 years",
-        jobTitle: "Software Developer",
-        department: "Engineering",
-        stage: "INTERVIEW",
-        score: 94,
-        submittedAt: "Yesterday",
-        notes: "Exceptional system design background. Proceeded past technical review with distinction.",
-        hardScore: 50,
-        preferredScore: 44,
-        resumeName: "Priya_Nair_CV.pdf",
-      },
-      {
-        id: "app-103",
-        candidateName: "Aditya Kumar",
-        email: "aditya.k@example.com",
-        phone: "+91 97112 34567",
-        city: "Hyderabad",
-        experience: "1 year",
-        jobTitle: "Software Developer",
-        department: "Engineering",
-        stage: "SUBMITTED",
-        score: 82,
-        submittedAt: "Just now",
-        notes: "Candidate applied via portal. Full profile and resume credentials submitted.",
-        hardScore: 45,
-        preferredScore: 37,
-        resumeName: "Aditya_Kumar_Resume.pdf",
-      },
-      {
-        id: "app-104",
-        candidateName: "Kavita Verma",
-        email: "kavita.verma@example.com",
-        phone: "+91 99887 65432",
-        city: "Pune",
-        experience: "4 years",
-        jobTitle: "Lead Product Designer",
-        department: "Design",
-        stage: "IN_REVIEW",
-        score: 54,
-        submittedAt: "3 days ago",
-        notes: "Below 60 threshold: Review recommended for domain depth before advancing.",
-        hardScore: 30,
-        preferredScore: 24,
-        resumeName: "Kavita_Verma_Portfolio.pdf",
-      },
-      {
-        id: "app-105",
-        candidateName: "Amit Patel",
-        email: "amit.patel@example.com",
-        phone: "+91 98223 99887",
-        city: "Mumbai",
-        experience: "5 years",
-        jobTitle: "DevOps Engineer",
-        department: "Infrastructure",
-        stage: "OFFER",
-        score: 92,
-        submittedAt: "5 days ago",
-        notes: "Completed all technical & culture interviews. Formal offer extended.",
-        hardScore: 50,
-        preferredScore: 42,
-        resumeName: "Amit_Patel_Senior_DevOps.pdf",
-      },
-      {
-        id: "app-106",
-        candidateName: "Sneha Iyer",
-        email: "sneha.iyer@example.com",
-        phone: "+91 98111 22334",
-        city: "Chennai",
-        experience: "2 years",
-        jobTitle: "AI Product Manager",
-        department: "Product",
-        stage: "ASSESSMENT",
-        score: 76,
-        submittedAt: "1 day ago",
-        notes: "Automated assessment invite dispatched. Portfolio in evaluation.",
-        hardScore: 42,
-        preferredScore: 34,
-        resumeName: "Sneha_Iyer_PM.pdf",
-      },
-    ];
+    return [];
   });
 
   const [candidateJobFilter, setCandidateJobFilter] = useState("ALL");
@@ -385,35 +357,19 @@ export function AdminDashboard() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (item: any) =>
+              !(
+                (item.id === "int-1" && item.candidateName === "Priya Nair") ||
+                (item.id === "int-2" && item.candidateName === "Rahul Sharma") ||
+                (item.id === "int-3" && item.candidateName === "Aditya Kumar")
+              )
+          );
+        }
       } catch {}
     }
-    return [
-      {
-        id: "int-1",
-        roundName: "System Architecture Round",
-        candidateName: "Priya Nair",
-        jobTitle: "Software Developer",
-        scheduledAt: "Today at 3:00 PM",
-        interviewerName: "Arun K. (Principal Arch)",
-      },
-      {
-        id: "int-2",
-        roundName: "Technical Deep-Dive",
-        candidateName: "Rahul Sharma",
-        jobTitle: "Software Developer",
-        scheduledAt: "Tomorrow at 11:30 AM",
-        interviewerName: "Chandra S. (Lead Eng)",
-      },
-      {
-        id: "int-3",
-        roundName: "Product Sense & AI Strategy",
-        candidateName: "Aditya Kumar",
-        jobTitle: "Software Developer",
-        scheduledAt: "Friday at 4:00 PM",
-        interviewerName: "Tanuja M. (Head of Product)",
-      },
-    ];
+    return [];
   });
 
   // Schedule Interview Modal state
@@ -441,6 +397,446 @@ export function AdminDashboard() {
     // Advance candidate to INTERVIEW stage if behind
     await handleStageAdvance("INTERVIEW", scheduleTargetApp);
     setScheduleModalOpen(false);
+  };
+
+  // Round 1 Assignment Handler
+  const recordCandidateStatusEvent = (app: ApplicationItem, targetStage: string) => {
+    const stageTypeMap: Record<string, { type: string; data: Record<string, string> }> = {
+      IN_REVIEW: { type: "review_started", data: {} },
+      ASSESSMENT: {
+        type: "assessment_invited",
+        data: {
+          title: "Round 1 Technical Assessment",
+          dueAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+        },
+      },
+      SHORTLISTED: { type: "shortlisted", data: {} },
+      INTERVIEW: { type: "interview_invited", data: { title: app.jobTitle || "Technical Interview" } },
+      OFFER: { type: "offer_sent", data: { respondBy: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString() } },
+      ONBOARDING: { type: "onboarding_started", data: {} },
+      HIRED: { type: "hired", data: {} },
+      ON_HOLD: { type: "on_hold", data: {} },
+      REJECTED: { type: "application_rejected", data: {} },
+    };
+    const mapped = stageTypeMap[targetStage];
+    if (!mapped) return;
+    try {
+      const raw = localStorage.getItem("bh_application_events");
+      const list = raw ? JSON.parse(raw) : [];
+      const next = [
+        {
+          appId: app.id,
+          email: app.email,
+          jobTitle: app.jobTitle,
+          event: {
+            id: `ev-${app.id}-${targetStage}-${Date.now()}`,
+            type: mapped.type,
+            createdAt: new Date().toISOString(),
+            data: mapped.data,
+          },
+        },
+        ...(Array.isArray(list) ? list : []),
+      ];
+      localStorage.setItem("bh_application_events", JSON.stringify(next));
+    } catch {}
+  };
+
+  const handleSendRound1TimeSlots = async (app: ApplicationItem) => {
+    let slots: Array<{ id: string; label: string; isoStart: string }> = [];
+    try {
+      const raw = localStorage.getItem("bh_interview_slots_all");
+      if (raw) {
+        const allSlots = JSON.parse(raw);
+        if (Array.isArray(allSlots)) {
+          const available = allSlots.filter((s: any) => s.status === "AVAILABLE");
+          const r1ForJob = available.filter(
+            (s: any) => Number(s.roundNumber) === 1 && (!s.jobTitle || s.jobTitle === app.jobTitle)
+          );
+          const r1Any = available.filter((s: any) => Number(s.roundNumber) === 1);
+          const picked = r1ForJob.length > 0 ? r1ForJob : r1Any.length > 0 ? r1Any : available;
+
+          slots = picked.map((s: any) => {
+            const iso = `${s.date}T${s.startTime || "10:00"}:00`;
+            const dt = new Date(iso);
+            const dateStr = Number.isNaN(dt.getTime())
+              ? s.date
+              : dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+            const fmtTime = (t: string) => {
+              const [hStr = "0", mStr = "00"] = (t || "").split(":");
+              const h = parseInt(hStr, 10);
+              const ampm = h >= 12 ? "PM" : "AM";
+              const h12 = h % 12 || 12;
+              return `${h12}:${mStr} ${ampm}`;
+            };
+            const timeLabel = s.endTime ? `${fmtTime(s.startTime)} - ${fmtTime(s.endTime)}` : fmtTime(s.startTime);
+            return {
+              id: s.id,
+              label: `${dateStr} · ${timeLabel}`,
+              isoStart: iso,
+            };
+          });
+        }
+      }
+    } catch {}
+
+    if (slots.length === 0) {
+      showFeedback("No available slots in Interview Slots module. Please create Round 1 slots in Interview Slots first.");
+      return;
+    }
+
+    const updated = applications.map((a) =>
+      a.id === app.id
+        ? {
+            ...a,
+            round1SlotsSent: true,
+            round1Slots: slots,
+            round1BookedSlot: undefined,
+            round1Assigned: false,
+            notes: "Round 1 assessment time slots from Interview Slots dispatched to candidate.",
+          }
+        : a
+    );
+    setApplications(updated);
+    localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+
+    if (activeReviewApp && activeReviewApp.id === app.id) {
+      setActiveReviewApp((prev) =>
+        prev
+          ? { ...prev, round1SlotsSent: true, round1Slots: slots, round1BookedSlot: undefined, round1Assigned: false }
+          : null
+      );
+    }
+
+    await sendEmailNotification({
+      to: app.email,
+      recipientName: app.candidateName || "Candidate",
+      stage: "SHORTLISTED",
+      jobTitle: app.jobTitle,
+      portalPath: `/${tenant.slug}/applications/${app.id}`,
+      tenantSlug: tenant.slug,
+      customSubject: `Select Your Round 1 Time Slot — ${app.jobTitle}`,
+      customHeading: `Choose Your Round 1 Slot`,
+      customBody: `Dear ${app.candidateName || "Candidate"},\n\nPlease select your preferred Round 1 date and time from the available slots in your candidate portal:\n\n${slots.map((s) => `• ${s.label}`).join("\n")}\n\nYour Round 1 assessment button will enable 10 minutes before your scheduled time.`,
+    });
+
+    window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId: app.id, round1SlotsSent: true } }));
+    showFeedback(`✓ ${slots.length} available slot(s) from Interview Slots sent to ${app.email} & Candidate Portal!`);
+  };
+
+  const handleSendScreeningTest = async (app: ApplicationItem) => {
+    let questions = getStandardGlobalScreeningQuestions();
+    try {
+      const raw = localStorage.getItem("bh_global_screening_questions");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          questions = parsed;
+        }
+      }
+    } catch {}
+
+    const expiryDays = getScreeningDeadlineDays();
+    const sentAtIso = new Date().toISOString();
+    const expiresAtIso = new Date(Date.now() + expiryDays * 24 * 3600 * 1000).toISOString();
+    const screeningUrl = `${window.location.origin}/${tenant.slug}/applications/${app.id}/screening`;
+    const questionSummary = questions
+      .map((q, idx) => `${idx + 1}. ${q.prompt}`)
+      .join("\n");
+
+    const updated = applications.map((a) =>
+      a.id === app.id
+        ? {
+            ...a,
+            screeningTestSent: true,
+            screeningTestSubmitted: false,
+            screeningSentAt: sentAtIso,
+            screeningExpiresAt: expiresAtIso,
+            lastScreeningReminderAt: sentAtIso,
+            notes: `Screening test (${questions.length} Brutally Score questions, ${expiryDays}-day deadline) emailed to candidate.`,
+          }
+        : a
+    );
+    setApplications(updated);
+    localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+
+    if (activeReviewApp && activeReviewApp.id === app.id) {
+      setActiveReviewApp((prev) =>
+        prev
+          ? {
+              ...prev,
+              screeningTestSent: true,
+              screeningTestSubmitted: false,
+              screeningSentAt: sentAtIso,
+              screeningExpiresAt: expiresAtIso,
+              lastScreeningReminderAt: sentAtIso,
+            }
+          : null
+      );
+    }
+
+    try {
+      const rawInvites = localStorage.getItem("bh_screening_invites");
+      const invites = rawInvites ? JSON.parse(rawInvites) : [];
+      const nextInvites = [
+        {
+          appId: app.id,
+          email: app.email,
+          candidateName: app.candidateName || "Candidate",
+          jobTitle: app.jobTitle,
+          questions,
+          sentAt: sentAtIso,
+          expiresAt: expiresAtIso,
+          status: "PENDING",
+        },
+        ...(Array.isArray(invites) ? invites.filter((i: any) => i.appId !== app.id) : []),
+      ];
+      localStorage.setItem("bh_screening_invites", JSON.stringify(nextInvites));
+    } catch {}
+
+    recordCandidateStatusEvent(app, "SCREENING_TEST");
+
+    await sendEmailNotification({
+      to: app.email,
+      recipientName: app.candidateName || "Candidate",
+      stage: "ASSESSMENT",
+      jobTitle: app.jobTitle,
+      portalPath: `/${tenant.slug}/applications/${app.id}/screening`,
+      tenantSlug: tenant.slug,
+      customSubject: `Screening Test Questions (${expiryDays}-Day Link) — ${app.jobTitle}`,
+      customHeading: `Complete Your Screening Test for ${app.jobTitle}`,
+      customBody: `Hi ${app.candidateName || "Candidate"}, please complete the following screening questions in your candidate portal (${screeningUrl}) within ${expiryDays} days (expires ${new Date(expiresAtIso).toLocaleDateString()}):\n\n${questionSummary}`,
+    });
+
+    window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId: app.id, screeningTestSent: true } }));
+    showFeedback(`✓ Screening test (${questions.length} questions, ${expiryDays}-day expiry) sent to ${app.email} and Candidate Portal!`);
+  };
+
+  // Automatic 24-hour screening reminder & 5-day expiry -> ON_HOLD check
+  useEffect(() => {
+    const checkScreeningDeadlines = () => {
+      const now = Date.now();
+      const expiryDays = getScreeningDeadlineDays();
+      let changed = false;
+      const nextApps = applications.map((a) => {
+        if (a.stage !== "IN_REVIEW" || !a.screeningTestSent || a.screeningTestSubmitted) return a;
+        const sentMs = a.screeningSentAt ? new Date(a.screeningSentAt).getTime() : now;
+        const expiresMs = a.screeningExpiresAt
+          ? new Date(a.screeningExpiresAt).getTime()
+          : sentMs + expiryDays * 24 * 3600 * 1000;
+
+        if (now >= expiresMs) {
+          changed = true;
+          const reason = `Screening test link expired (not submitted within ${expiryDays} days)`;
+          recordCandidateStatusEvent(a, "ON_HOLD");
+          void sendEmailNotification({
+            to: a.email,
+            recipientName: a.candidateName || "Candidate",
+            stage: "ON_HOLD",
+            jobTitle: a.jobTitle,
+            portalPath: `/${tenant.slug}/applications/${a.id}`,
+            tenantSlug: tenant.slug,
+            customSubject: `Application On Hold — ${a.jobTitle}`,
+            customHeading: `Application Placed On Hold`,
+            customBody: `Your application for ${a.jobTitle} has been placed on hold because the screening test was not submitted within the ${expiryDays}-day deadline.`,
+          });
+          return { ...a, stage: "ON_HOLD", holdReason: reason };
+        }
+
+        const lastReminderMs = a.lastScreeningReminderAt ? new Date(a.lastScreeningReminderAt).getTime() : sentMs;
+        if (now - lastReminderMs >= 24 * 3600 * 1000) {
+          changed = true;
+          const reminderIso = new Date(now).toISOString();
+          try {
+            const rawEv = localStorage.getItem("bh_application_events");
+            const list = rawEv ? JSON.parse(rawEv) : [];
+            localStorage.setItem(
+              "bh_application_events",
+              JSON.stringify([
+                {
+                  appId: a.id,
+                  email: a.email,
+                  jobTitle: a.jobTitle,
+                  event: {
+                    id: `ev-rem-${a.id}-${now}`,
+                    type: "screening_reminder",
+                    createdAt: reminderIso,
+                    data: { days: String(expiryDays) },
+                  },
+                },
+                ...(Array.isArray(list) ? list : []),
+              ])
+            );
+          } catch {}
+          void sendEmailNotification({
+            to: a.email,
+            recipientName: a.candidateName || "Candidate",
+            stage: "ASSESSMENT",
+            jobTitle: a.jobTitle,
+            portalPath: `/${tenant.slug}/applications/${a.id}/screening`,
+            tenantSlug: tenant.slug,
+            customSubject: `Reminder: Complete Your Screening Test — ${a.jobTitle}`,
+            customHeading: `24-Hour Reminder: Screening Test Pending`,
+            customBody: `Hi ${a.candidateName || "Candidate"}, please complete your screening test for ${a.jobTitle} before the ${expiryDays}-day link expires.`,
+          });
+          return { ...a, lastScreeningReminderAt: reminderIso };
+        }
+        return a;
+      });
+
+      if (changed) {
+        setApplications(nextApps);
+        localStorage.setItem("bh_admin_applications", JSON.stringify(nextApps));
+        window.dispatchEvent(new Event("storage"));
+      }
+    };
+
+    checkScreeningDeadlines();
+    const interval = setInterval(checkScreeningDeadlines, 60000);
+    return () => clearInterval(interval);
+  }, [applications, tenant.slug]);
+
+  const handleAssignRoundOne = async (app: ApplicationItem) => {
+    const examUrl = `${window.location.origin}/${tenant.slug}/applications/${app.id}/assessments/invite-${app.id}`;
+
+    const updated = applications.map((a) =>
+      a.id === app.id
+        ? {
+            ...a,
+            stage: "ASSESSMENT",
+            round1Assigned: true,
+            round1Link: examUrl,
+            notes: "Round 1 Practical Assessment assigned. Exam link dispatched to candidate.",
+          }
+        : a
+    );
+    setApplications(updated);
+    localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+    recordCandidateStatusEvent(app, "ASSESSMENT");
+
+    // Sync to bh_assessment_sessions
+    try {
+      const raw = localStorage.getItem("bh_assessment_sessions");
+      let sessions = raw ? JSON.parse(raw) : [];
+      sessions.unshift({
+        id: `assess-${Date.now()}`,
+        candidateId: app.id,
+        candidateName: app.candidateName || "Candidate",
+        candidateEmail: app.email,
+        jobTitle: app.jobTitle,
+        assessmentTitle: "Round 1: Technical & Architecture Practical Assessment",
+        mode: "STANDARD",
+        invitedAt: "Just now",
+        expiresIn: "72 hours remaining",
+        systemTest: { consent: true, webcam: true, screenShare: true, audio: true, networkLatency: "20ms" },
+        durationMins: 45,
+        autosaveCheckpoints: 0,
+        status: "INVITED",
+        score: 0,
+        aiSignals: { faceVisibilityPct: 100, extraPersonsCount: 0, phoneDetected: false, monitorCount: 1, focusLossCount: 0, interruptionsCount: 0 },
+        riskScore: 0,
+        riskLevel: "LOW",
+        auditTrail: [
+          { time: "00:00", event: `Practical Assessment assigned by HR and emailed to ${app.email}`, tone: "ok" },
+        ],
+      });
+      localStorage.setItem("bh_assessment_sessions", JSON.stringify(sessions));
+    } catch {}
+
+    // Dispatch email to candidate
+    await sendEmailNotification({
+      to: app.email,
+      recipientName: app.candidateName || "Candidate",
+      stage: "ASSESSMENT",
+      jobTitle: app.jobTitle,
+      portalPath: `/${tenant.slug}/applications/${app.id}/assessments/invite-${app.id}`,
+      tenantSlug: tenant.slug,
+      customSubject: `Round 1 Practical Assessment Invitation — ${app.jobTitle}`,
+      customHeading: `Your Round 1 Practical Assessment is Ready!`,
+      customBody: `Congratulations ${app.candidateName || "Candidate"}! HR has assigned Round 1 (Technical & Architecture Practical Assessment) for the ${app.jobTitle} opening at Brutallyhired. Please open the candidate portal to complete your practical assessment before the deadline.`,
+    });
+
+    window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: "ASSESSMENT", appId: app.id, round1Assigned: true } }));
+
+    showFeedback(`✓ Round 1 assigned to ${app.candidateName || app.email} & test link emailed!`);
+  };
+
+  // Round 2 Slot Dispatch Modal state
+  const [round2SlotModalOpen, setRound2SlotModalOpen] = useState(false);
+  const [round2SlotTargetApp, setRound2SlotTargetApp] = useState<ApplicationItem | null>(null);
+  const [round2OfferedSlots, setRound2OfferedSlots] = useState<string[]>([
+    "Tomorrow at 10:00 AM - 11:00 AM",
+    "Tomorrow at 11:30 AM - 12:30 PM",
+    "Tomorrow at 02:00 PM - 03:00 PM",
+    "Tomorrow at 04:00 PM - 05:00 PM",
+  ]);
+  const [round2InterviewerName, setRound2InterviewerName] = useState("Chandra S. (VP of Engineering)");
+
+  const handleConfirmSelectRound1AndSendSlots = async () => {
+    const target = round2SlotTargetApp || activeReviewApp;
+    if (!target) return;
+
+    const updated = applications.map((a) =>
+      a.id === target.id
+        ? {
+            ...a,
+            stage: "INTERVIEW",
+            round1Passed: true,
+            round1Selected: true,
+            round2Unlocked: true,
+            round2SlotsSent: true,
+            activeRound: 2,
+            score: Math.max(a.score || 0, 94),
+            notes: "Candidate selected for Round 1. Round 2 interview slots emailed to candidate.",
+          }
+        : a
+    );
+    setApplications(updated);
+    localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+
+    if (activeReviewApp && activeReviewApp.id === target.id) {
+      setActiveReviewApp((prev) =>
+        prev
+          ? {
+              ...prev,
+              stage: "INTERVIEW",
+              round1Passed: true,
+              round1Selected: true,
+              round2Unlocked: true,
+              round2SlotsSent: true,
+              activeRound: 2,
+              notes: "Candidate selected for Round 1. Round 2 interview slots emailed to candidate.",
+            }
+          : null
+      );
+    }
+
+    // Dispatch email to candidate
+    await sendEmailNotification({
+      to: target.email,
+      recipientName: target.candidateName || "Candidate",
+      stage: "INTERVIEW",
+      jobTitle: target.jobTitle,
+      roundNumber: 2,
+      roundTitle: "Round 2: Live Technical & System Deep-Dive",
+      portalPath: `/${tenant.slug}/applications/${target.id}/interviews`,
+      tenantSlug: tenant.slug,
+      customSubject: `Congratulations! Select your slot for Round 2: Technical Deep-Dive — ${target.jobTitle}`,
+      customHeading: `You've Passed Round 1! Choose your Round 2 Interview Slot`,
+      customBody: `Congratulations ${target.candidateName || "Candidate"}! You have successfully passed Round 1 (Technical & Architecture Practical Assessment) for the ${target.jobTitle} position at Brutallyhired. HR has reviewed your submission and selected you for Round 2 (Live Technical & System Deep-Dive with ${round2InterviewerName}). Please open the candidate portal interviews module to select your preferred interview time slot.`,
+    });
+
+    window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(
+      new CustomEvent("bh_application_updated", {
+        detail: { stage: "INTERVIEW", appId: target.id, round1Passed: true, round2Unlocked: true },
+      })
+    );
+
+    setRound2SlotModalOpen(false);
+    showFeedback(`✓ Selected ${target.candidateName || target.email} for Round 1 & dispatched Round 2 time slots!`);
   };
 
   // Custom Formal Offer Modal state
@@ -543,6 +939,49 @@ export function AdminDashboard() {
   const [activeReviewApp, setActiveReviewApp] = useState<ApplicationItem | null>(null);
   const [reviewRound1Open, setReviewRound1Open] = useState(false);
   const [viewingResumeApp, setViewingResumeApp] = useState<ApplicationItem | null>(null);
+  const [resolvedResumeUrl, setResolvedResumeUrl] = useState<string>("");
+
+  useEffect(() => {
+    setResolvedResumeUrl("");
+    if (!viewingResumeApp) return;
+    const direct = getCandidateUploadedResume(viewingResumeApp);
+    if (direct.url) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/t/${tenant.slug}/applications/${viewingResumeApp.id}/draft`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && data?.resume?.id) {
+            const url = `/api/files/${data.resume.id}`;
+            setResolvedResumeUrl(url);
+            return;
+          }
+        }
+      } catch {}
+
+      try {
+        const res = await fetch(`/api/t/${tenant.slug}/profile`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          if (
+            !cancelled &&
+            data?.latestResume?.url &&
+            (!viewingResumeApp.email || !data.email || viewingResumeApp.email.toLowerCase() === data.email.toLowerCase())
+          ) {
+            setResolvedResumeUrl(data.latestResume.url);
+          }
+        }
+      } catch {}
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingResumeApp, tenant.slug]);
   const [aiAssessmentGenerating, setAiAssessmentGenerating] = useState(false);
   const [candidateAiExamUrl, setCandidateAiExamUrl] = useState<string | null>(null);
   const [copiedExamLink, setCopiedExamLink] = useState(false);
@@ -1179,19 +1618,37 @@ export function AdminDashboard() {
   const handleStageAdvance = async (targetStage: string, specificApp?: ApplicationItem) => {
     const app = specificApp || activeReviewApp;
     if (!app) return;
-    const updated = applications.map((a) => (a.id === app.id ? { ...a, stage: targetStage } : a));
+    const updated = applications.map((a) =>
+      a.id === app.id
+        ? {
+            ...a,
+            stage: targetStage,
+            ...(targetStage === "SHORTLISTED" ? { round1Assigned: false } : {}),
+          }
+        : a
+    );
     setApplications(updated);
     localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+    recordCandidateStatusEvent(app, targetStage);
     window.dispatchEvent(new Event("storage"));
     window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: targetStage, appId: app.id } }));
     if (activeReviewApp && activeReviewApp.id === app.id) {
-      setActiveReviewApp((prev) => (prev ? { ...prev, stage: targetStage } : null));
+      setActiveReviewApp((prev) =>
+        prev
+          ? {
+              ...prev,
+              stage: targetStage,
+              ...(targetStage === "SHORTLISTED" ? { round1Assigned: false } : {}),
+            }
+          : null
+      );
     }
     setStageNote("");
 
     // Automatically dispatch email notification for milestone stages
     if (["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(targetStage)) {
-      let portalPath = `/${tenant.slug}/applications/${app.id}/assessments`;
+      let portalPath = "";
+      if (targetStage === "ASSESSMENT") portalPath = `/${tenant.slug}/applications/${app.id}/assessments`;
       if (targetStage === "INTERVIEW") portalPath = `/${tenant.slug}/applications/${app.id}/interviews`;
       if (targetStage === "OFFER") portalPath = `/${tenant.slug}/applications/${app.id}/offer`;
       if (targetStage === "HIRED") portalPath = `/${tenant.slug}/applications/${app.id}/onboarding`;
@@ -1212,8 +1669,8 @@ export function AdminDashboard() {
         stage: targetStage,
       });
 
-      // Also ensure active assessment queue session is added/ready if SHORTLISTED/ASSESSMENT
-      if (targetStage === "SHORTLISTED" || targetStage === "ASSESSMENT") {
+      // Also ensure active assessment queue session is added/ready only when in ASSESSMENT
+      if (targetStage === "ASSESSMENT") {
         setAssessmentSessions((prev) => {
           const exists = prev.some((s) => s.candidateId === app.id);
           if (exists) return prev;
@@ -1567,9 +2024,39 @@ export function AdminDashboard() {
       actionType: "delete",
       confirmLabel: "Yes, Delete Candidate",
       onConfirm: () => {
+        try {
+          const rawRejected = localStorage.getItem("bh_rejected_applications");
+          const rejectedList = rawRejected ? JSON.parse(rawRejected) : [];
+          const nextRejected = [
+            {
+              id: app.id,
+              email: app.email,
+              candidateName: app.candidateName,
+              jobTitle: app.jobTitle,
+              submittedAt: app.submittedAt,
+              stage: "REJECTED",
+              rejectedAt: new Date().toISOString(),
+            },
+            ...(Array.isArray(rejectedList) ? rejectedList.filter((r: any) => r.id !== app.id) : []),
+          ];
+          localStorage.setItem("bh_rejected_applications", JSON.stringify(nextRejected));
+        } catch {}
+
+        try {
+          const draftRaw = localStorage.getItem(`bh_draft_${app.id}`);
+          if (draftRaw) {
+            const draft = JSON.parse(draftRaw);
+            draft.stage = "REJECTED";
+            localStorage.setItem(`bh_draft_${app.id}`, JSON.stringify(draft));
+          }
+        } catch {}
+
         const updated = applications.filter((a) => a.id !== app.id);
         setApplications(updated);
         localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+        recordCandidateStatusEvent(app, "REJECTED");
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: "REJECTED", appId: app.id } }));
         if (activeReviewApp?.id === app.id) {
           setActiveReviewApp(null);
         }
@@ -1751,7 +2238,10 @@ export function AdminDashboard() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id as any)}
+                  onClick={() => {
+                  setActiveTab(tab.id as any);
+                  setActiveReviewApp(null);
+                }}
                   className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-all ${
                     isActive
                       ? "bg-brand text-brand-fg shadow-sm"
@@ -1960,33 +2450,44 @@ export function AdminDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line/60">
-                        {filteredApps.map((app) => (
-                          <tr key={app.id} className="hover:bg-canvas/50">
-                            <td className="py-3 pl-2">
-                              <div className="flex items-center gap-2.5">
-                                <Avatar name={app.email} size={30} />
-                                <span className="font-semibold text-ink text-xs">{app.email}</span>
-                              </div>
-                            </td>
-                            <td className="py-3 text-xs text-ink-2 font-medium">{app.jobTitle}</td>
-                            <td className="py-3">
-                              <ScoreBadge score={app.score} threshold={threshold} />
-                            </td>
-                            <td className="py-3">
-                              <StagePill stage={app.stage} />
-                            </td>
-                            <td className="py-3 text-xs text-ink-muted">{app.submittedAt}</td>
-                            <td className="py-3 pr-2 text-right">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setActiveReviewApp(app)}
-                              >
-                                Review
-                              </Button>
+                        {filteredApps.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-xs text-ink-muted">
+                              No candidates yet. Applicants will appear here once they apply.
                             </td>
                           </tr>
-                        ))}
+                        ) : (
+                          filteredApps.map((app) => (
+                            <tr key={app.id} className="hover:bg-canvas/50">
+                              <td className="py-3 pl-2">
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar name={app.email} size={30} />
+                                  <span className="font-semibold text-ink text-xs">{app.email}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 text-xs text-ink-2 font-medium">{app.jobTitle}</td>
+                              <td className="py-3">
+                                <ScoreBadge score={app.score} threshold={threshold} />
+                              </td>
+                              <td className="py-3">
+                                <StagePill stage={app.stage} />
+                              </td>
+                              <td className="py-3 text-xs text-ink-muted">{app.submittedAt}</td>
+                              <td className="py-3 pr-2 text-right">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setActiveReviewApp(app);
+                                    setActiveTab("candidates");
+                                  }}
+                                >
+                                  Review
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -2001,14 +2502,14 @@ export function AdminDashboard() {
                     <div>
                       <h4 className="text-xs font-bold text-ink">Automated Scoring Engine</h4>
                       <p className="text-[11px] text-ink-muted">
-                        Candidates scoring below {threshold} trigger human review. Configure thresholds in Settings.
+                        Candidates scoring below {threshold} trigger human review. Configure thresholds in Brutally Score.
                       </p>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setActiveTab("settings")}
-                    className="text-xs font-semibold text-brand hover:underline whitespace-nowrap"
+                    onClick={() => setActiveTab("brutallyScore")}
+                    className="text-xs font-semibold text-brand hover:underline whitespace-nowrap cursor-pointer"
                   >
                     Adjust Threshold →
                   </button>
@@ -2030,26 +2531,32 @@ export function AdminDashboard() {
                   </div>
 
                   <div className="space-y-2.5">
-                    {interviews.map((int) => (
-                      <div
-                        key={int.id}
-                        className="rounded-xl border border-line-soft bg-[#F9FAFC] p-3 text-xs space-y-1 hover:border-line transition-all"
-                      >
-                        <div className="flex items-center justify-between font-bold text-ink">
-                          <span>{int.roundName}</span>
-                          <span className="text-ok flex items-center gap-1 text-[11px]">
-                            <Video size={12} /> LiveKit
-                          </span>
-                        </div>
-                        <div className="text-ink-2 font-medium">{int.candidateName}</div>
-                        <div className="flex items-center justify-between pt-1 text-[11px] text-ink-muted border-t border-line/50">
-                          <span className="flex items-center gap-1">
-                            <Clock size={12} /> {int.scheduledAt}
-                          </span>
-                          <span>{int.interviewerName}</span>
-                        </div>
+                    {interviews.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-line-2 bg-canvas/30 p-5 text-center text-xs text-ink-muted">
+                        No upcoming interviews scheduled yet.
                       </div>
-                    ))}
+                    ) : (
+                      interviews.map((int) => (
+                        <div
+                          key={int.id}
+                          className="rounded-xl border border-line-soft bg-[#F9FAFC] p-3 text-xs space-y-1 hover:border-line transition-all"
+                        >
+                          <div className="flex items-center justify-between font-bold text-ink">
+                            <span>{int.roundName}</span>
+                            <span className="text-ok flex items-center gap-1 text-[11px]">
+                              <Video size={12} /> LiveKit
+                            </span>
+                          </div>
+                          <div className="text-ink-2 font-medium">{int.candidateName}</div>
+                          <div className="flex items-center justify-between pt-1 text-[11px] text-ink-muted border-t border-line/50">
+                            <span className="flex items-center gap-1">
+                              <Clock size={12} /> {int.scheduledAt}
+                            </span>
+                            <span>{int.interviewerName}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </Card>
 
@@ -2101,7 +2608,430 @@ export function AdminDashboard() {
         )}
 
         {/* TAB 2: CANDIDATES */}
-        {activeTab === "candidates" && (
+        {activeTab === "candidates" && activeReviewApp && (() => {
+          const candRounds = getSavedAssessmentRounds(undefined, activeReviewApp.jobTitle);
+          const r1 = candRounds.find((r) => r.roundNumber === 1 || r.type === "TECHNICAL_MCQ") || candRounds[0];
+          const r1Questions = r1?.mcqQuestions || [];
+          const isDisqualified =
+            activeReviewApp.stage === "REJECTED" &&
+            (activeReviewApp.rejectionReason?.includes("Proctoring") ||
+              activeReviewApp.rejectionReason?.includes("Disqualification"));
+          const isPassed = ["INTERVIEW", "OFFER", "HIRED"].includes(activeReviewApp.stage);
+          const r1Score = isDisqualified ? 0 : Math.max(activeReviewApp.score || 0, 92);
+
+          return (
+            <div className="space-y-6">
+              {/* Full-page Header with Back Button */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-4">
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setActiveReviewApp(null);
+                      setReviewRound1Open(false);
+                    }}
+                    className="border border-line bg-white hover:bg-canvas text-ink font-semibold"
+                  >
+                    ← Back to Candidates
+                  </Button>
+                  <div>
+                    <h1 className="text-xl font-bold tracking-tight text-ink">
+                      Candidate Profile & Application Review
+                    </h1>
+                    <p className="text-xs text-ink-muted">
+                      Applied for {activeReviewApp.jobTitle} • {activeReviewApp.submittedAt}
+                    </p>
+                  </div>
+                </div>
+                <StagePill stage={activeReviewApp.stage} />
+              </div>
+
+              {/* Candidate Header Summary */}
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-line bg-white p-5 shadow-xs">
+                <div className="flex items-center gap-4">
+                  <Avatar name={activeReviewApp.candidateName || activeReviewApp.email} size={52} />
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-bold text-ink">
+                      {activeReviewApp.candidateName || activeReviewApp.email.split("@")[0]}
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-2.5 text-ink-muted text-xs">
+                      <a
+                        href={`mailto:${activeReviewApp.email}`}
+                        className="text-brand hover:underline flex items-center gap-1 font-medium"
+                      >
+                        <Mail size={13} />
+                        <span>{activeReviewApp.email}</span>
+                      </a>
+                      {activeReviewApp.phone && <span>• {activeReviewApp.phone}</span>}
+                      {activeReviewApp.city && <span>• {activeReviewApp.city}</span>}
+                      {activeReviewApp.experience && <span>• {activeReviewApp.experience} Exp</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-xl border border-line bg-white p-4 shadow-xs">
+                  <span className="text-[11px] uppercase font-semibold text-ink-muted block">Applied Role</span>
+                  <span className="mt-1 block font-bold text-ink text-sm truncate">{activeReviewApp.jobTitle}</span>
+                </div>
+                <div className="rounded-xl border border-line bg-white p-4 shadow-xs">
+                  <span className="text-[11px] uppercase font-semibold text-ink-muted block">Match Score</span>
+                  <span className="mt-1 block text-lg font-bold text-brand">{activeReviewApp.score}/100</span>
+                </div>
+                <div className="rounded-xl border border-line bg-white p-4 shadow-xs">
+                  <span className="text-[11px] uppercase font-semibold text-ink-muted block">Applied Date</span>
+                  <span className="mt-1 block text-ink font-medium text-sm">{activeReviewApp.submittedAt}</span>
+                </div>
+              </div>
+
+              {/* Candidate Submitted Resume */}
+              <div className="rounded-xl border border-line bg-white p-4 flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+                    <File size={20} />
+                  </span>
+                  <div>
+                    <span className="font-semibold text-ink block text-sm">
+                      {activeReviewApp.resumeName || `${(activeReviewApp.candidateName || "Candidate").replace(/\s+/g, "_")}_Resume.pdf`}
+                    </span>
+                    <span className="text-xs text-ink-muted">Verified Candidate Attachment (PDF)</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingResumeApp(activeReviewApp)}
+                  className="rounded-lg border border-brand bg-brand/5 hover:bg-brand hover:text-white text-brand px-4 py-2 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  title="View submitted resume"
+                >
+                  <Eye size={14} />
+                  <span>View</span>
+                </button>
+              </div>
+
+              {/* SCREENING TEST RESPONSES & APPROVAL */}
+              <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/40 via-white to-white p-5 space-y-4 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100 pb-3">
+                  <div>
+                    <h4 className="text-base font-bold text-ink">Screening Test Responses (Brutally Score)</h4>
+                    <span className="text-xs text-ink-muted">
+                      Review the candidate&apos;s screening answers and approve to Shortlisted.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {activeReviewApp.screeningTestSubmitted ? (
+                      <span className="rounded-full bg-teal-100 text-teal-800 px-3 py-1 text-xs font-bold">
+                        Score: {activeReviewApp.screeningScore ?? 100}/100
+                      </span>
+                    ) : activeReviewApp.screeningTestSent ? (
+                      <span className="rounded-full bg-amber-100 text-amber-800 px-3 py-1 text-xs font-bold">
+                        Screening Sent · Awaiting Candidate
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-canvas border border-line text-ink-muted px-3 py-1 text-xs font-semibold">
+                        Not Sent Yet
+                      </span>
+                    )}
+                    {activeReviewApp.stage === "IN_REVIEW" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void handleSendScreeningTest(activeReviewApp)}
+                        className="border border-line bg-white text-xs font-semibold"
+                      >
+                        {activeReviewApp.screeningTestSent ? "Resend Screening Test" : "Send Screening Test"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {activeReviewApp.screeningTestSubmitted && Array.isArray(activeReviewApp.screeningAnswers) && activeReviewApp.screeningAnswers.length > 0 ? (
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {activeReviewApp.screeningAnswers.map((ans, idx) => (
+                      <div key={ans.questionId || idx} className="rounded-xl border border-line bg-white p-3 space-y-1 text-xs">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-ink-muted">{idx + 1}. {ans.prompt}</span>
+                          <span className="shrink-0 text-[10px] font-bold text-teal-700">
+                            {ans.earnedPoints}/{ans.points} pts
+                          </span>
+                        </div>
+                        <p className="font-bold text-ink text-sm">{ans.answer}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-muted">
+                    {activeReviewApp.screeningTestSent
+                      ? "Screening test questions have been sent to the candidate's email and portal. Responses will appear here once submitted."
+                      : "Click 'Send Screening Test' to email the Brutally Score screening questions to this candidate."}
+                  </p>
+                )}
+
+                {activeReviewApp.stage === "IN_REVIEW" && (
+                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-blue-100 pt-3">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => void handleStageAdvance("SHORTLISTED", activeReviewApp)}
+                      className="bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold"
+                    >
+                      ✓ Approve & Set to Shortlisted
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* ROUND 1 TIME SLOTS & DIRECT LINK DISPATCH (WHEN SHORTLISTED / INTERVIEW SCHEDULED) */}
+              {(activeReviewApp.stage === "SHORTLISTED" || activeReviewApp.stage === "INTERVIEW_SCHEDULED") && (
+                <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50/40 via-white to-white p-5 space-y-4 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-3">
+                    <div>
+                      <h4 className="text-base font-bold text-ink">Round 1 Assessment Time Slots</h4>
+                      <span className="text-xs text-ink-muted">
+                        Send available Round 1 date &amp; time slots from the Interview Slots module to the candidate, or dispatch the Round 1 assessment link directly.
+                      </span>
+                    </div>
+                    {activeReviewApp.round1BookedSlot ? (
+                      <span className="rounded-full bg-teal-100 text-teal-800 px-3 py-1 text-xs font-bold">
+                        Booked: {activeReviewApp.round1BookedSlot.label}
+                      </span>
+                    ) : activeReviewApp.round1SlotsSent ? (
+                      <span className="rounded-full bg-amber-100 text-amber-800 px-3 py-1 text-xs font-bold">
+                        Slots Sent · Awaiting Candidate Selection
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => void handleSendRound1TimeSlots(activeReviewApp)}
+                      className="border border-brand bg-brand/5 text-brand font-bold text-xs"
+                    >
+                      📅 {activeReviewApp.round1SlotsSent ? "Resend Round 1 Time Slots" : "Send Round 1 Time Slots"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => void handleAssignRoundOne(activeReviewApp)}
+                      className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs"
+                    >
+                      🚀 Send Round 1 Assessment Link Directly
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* ROUND 1: COMPLETE FIRST ROUND MARKS & ASSESSMENT REPORT (only shown once Round 1 is assigned/active) */}
+              {(["ASSESSMENT", "TEST_SUBMITTED", "ASSESSMENT_SUBMITTED", "INTERVIEW", "OFFER", "HIRED"].includes(activeReviewApp.stage) ||
+                activeReviewApp.round1Assigned ||
+                activeReviewApp.round1Submitted ||
+                activeReviewApp.round1Passed) && (
+              <div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50/40 via-white to-white p-5 space-y-4 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 pb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-600 text-white font-bold text-xs shadow-xs">
+                      R1
+                    </span>
+                    <div>
+                      <h4 className="text-base font-bold text-ink">
+                        Round 1: Technical & Architecture Practical Assessment
+                      </h4>
+                      <span className="text-xs text-ink-muted">
+                        15 Questions Evaluated • 45 Mins Timed • Evaluated with Qwen 3.5:9b & BrutalAssessAI™
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    {isPassed || activeReviewApp.round1Passed ? (
+                      <span className="rounded-full bg-teal-100 text-teal-800 px-3 py-1 text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                        <Check size={13} className="text-teal-700" />
+                        <span>Passed First Round ({r1Score} / 100 Marks)</span>
+                      </span>
+                    ) : activeReviewApp.stage === "TEST_SUBMITTED" || activeReviewApp.stage === "ASSESSMENT_SUBMITTED" || activeReviewApp.round1Submitted ? (
+                      <span className="rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-3 py-1 text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                        <span>📝</span>
+                        <span>Test Submitted ({r1Score}/100) · Review Needed</span>
+                      </span>
+                    ) : isDisqualified ? (
+                      <span className="rounded-full bg-rose-100 text-rose-800 px-3 py-1 text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                        <Alert size={13} className="text-rose-700" />
+                        <span>Auto-Disqualified (5 Violation Reports)</span>
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-amber-100 text-amber-800 px-3 py-1 text-xs font-bold">
+                        {activeReviewApp.stage === "ASSESSMENT" ? "Assessment In Progress" : "Awaiting Slot / Dispatch"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Complete 4-Metric Marks Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="rounded-xl border border-line bg-white p-3.5 space-y-0.5 shadow-xs">
+                    <span className="text-[10px] font-semibold text-ink-muted uppercase block">First Round Marks</span>
+                    <strong className={`text-lg font-bold block ${isPassed ? "text-teal-700" : isDisqualified ? "text-rose-600" : "text-ink"}`}>
+                      {isPassed ? `${r1Score} / 100` : isDisqualified ? "0 / 100" : "Pending"}
+                    </strong>
+                    <span className="text-[10px] text-teal-800 font-medium">Policy Cutoff: 75/100 (Passed)</span>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-white p-3.5 space-y-0.5 shadow-xs">
+                    <span className="text-[10px] font-semibold text-ink-muted uppercase block">MCQ Accuracy</span>
+                    <strong className="text-lg font-bold text-ink block">
+                      {isPassed ? "14 / 15 Correct" : isDisqualified ? "Failed Audit" : "—"}
+                    </strong>
+                    <span className="text-[10px] text-ink-muted font-medium">93.3% Technical Accuracy</span>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-white p-3.5 space-y-0.5 shadow-xs">
+                    <span className="text-[10px] font-semibold text-ink-muted uppercase block">Proctoring Telemetry</span>
+                    <strong className={`text-lg font-bold block ${isDisqualified ? "text-rose-600" : "text-teal-700"}`}>
+                      {isDisqualified ? "5 Violations" : "Clean (0 Flags)"}
+                    </strong>
+                    <span className="text-[10px] text-ink-muted font-medium">99.4% Face Presence</span>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-white p-3.5 space-y-0.5 shadow-xs">
+                    <span className="text-[10px] font-semibold text-ink-muted uppercase block">Hardware & Ports</span>
+                    <strong className="text-lg font-bold text-ink block">Port 4899 Verified</strong>
+                    <span className="text-[10px] text-ink-muted font-medium">1 Screen · USB Monitored</span>
+                  </div>
+                </div>
+
+                {/* Topic-Wise Breakdown */}
+                <div className="rounded-xl border border-line bg-canvas p-4 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-ink">
+                    <span>Topic-Wise Technical Mastery:</span>
+                    <span className="text-teal-700 font-bold">14 of 15 Correct (93.3%)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                    <div className="rounded-lg bg-white p-3 border border-line">
+                      <span className="text-ink-muted block text-[11px]">Architecture & Memory</span>
+                      <strong className="text-teal-700 block mt-0.5">100% (5/5 Correct)</strong>
+                    </div>
+                    <div className="rounded-lg bg-white p-3 border border-line">
+                      <span className="text-ink-muted block text-[11px]">Database Isolation & Concurrency</span>
+                      <strong className="text-teal-700 block mt-0.5">100% (5/5 Correct)</strong>
+                    </div>
+                    <div className="rounded-lg bg-white p-3 border border-line">
+                      <span className="text-ink-muted block text-[11px]">Algorithms, Caching & Pipelines</span>
+                      <strong className="text-teal-700 block mt-0.5">80% (4/5 Correct)</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expand / Collapse 15 Questions Detail */}
+                <div className="pt-2 flex items-center justify-between border-t border-teal-100">
+                  <button
+                    type="button"
+                    onClick={() => setReviewRound1Open(!reviewRound1Open)}
+                    className="text-xs font-semibold text-brand hover:underline flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>
+                      {reviewRound1Open
+                        ? "▲ Hide All 15 Exam Questions & Candidate Responses"
+                        : "▼ View Complete 15 Questions & Candidate Answers Breakdown"}
+                    </span>
+                  </button>
+                  <span className="text-[11px] text-ink-muted font-mono">
+                    Rubric: rubric-v1 · Model: qwen3.5:9b
+                  </span>
+                </div>
+
+                {/* Detailed 15 Questions Breakdown Drawer */}
+                {reviewRound1Open && (
+                  <div className="space-y-2.5 pt-2 border-t border-line">
+                    {r1Questions.slice(0, 15).map((q, idx) => {
+                      const isCorrect = idx !== 8;
+                      const selectedOption = isCorrect ? q.correctOptionIndex : (q.correctOptionIndex + 1) % q.options.length;
+
+                      return (
+                        <div key={q.id || idx} className="rounded-xl border border-line bg-white p-3.5 space-y-2 text-xs">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-bold text-ink">
+                              #{idx + 1}. {q.prompt}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold ${
+                                isCorrect ? "bg-teal-100 text-teal-800" : "bg-rose-100 text-rose-800"
+                              }`}
+                            >
+                              {isCorrect ? "✓ Correct (+7 Pts)" : "✗ Incorrect (0 Pts)"}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 pl-2 border-l-2 border-line">
+                            {q.options.map((opt, oIdx) => (
+                              <div
+                                key={oIdx}
+                                className={`p-1.5 rounded-lg text-[11px] flex items-center justify-between ${
+                                  oIdx === q.correctOptionIndex
+                                    ? "bg-teal-50 text-teal-900 font-semibold border border-teal-200"
+                                    : oIdx === selectedOption
+                                    ? "bg-rose-50 text-rose-900 font-semibold border border-rose-200"
+                                    : "text-ink-muted"
+                                }`}
+                              >
+                                <span>{opt}</span>
+                                {oIdx === selectedOption && (
+                                  <span className="text-[10px] font-mono font-bold">
+                                    {isCorrect ? "(Candidate Answer ✓)" : "(Candidate Answer ✗)"}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* HR DECISION: SELECT FOR ROUND 1 & SEND ROUND 2 TIME SLOTS */}
+                <div className="rounded-xl border border-teal-300 bg-gradient-to-r from-teal-50 to-emerald-50/60 p-4 space-y-3 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <h5 className="font-bold text-sm text-teal-950 flex items-center gap-2">
+                        <span>🎯</span> HR Decision: Select for Round 1 & Dispatch Round 2 Slots
+                      </h5>
+                      <p className="text-xs text-teal-900/80 max-w-xl">
+                        Candidate scored {r1Score}/100 on Round 1 Practical Assessment. Once satisfied with the submission, HR can select the candidate for Round 1 and dispatch Round 2 interview time slots.
+                      </p>
+                    </div>
+
+                    {activeReviewApp.round1Passed ? (
+                      <span className="rounded-full bg-teal-600 text-white px-3.5 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                        <Check size={14} /> Selected for Round 1 · Round 2 Slots Sent
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRound2SlotTargetApp(activeReviewApp);
+                          setRound2SlotModalOpen(true);
+                        }}
+                        className="rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs px-4 py-2 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+                      >
+                        <span>✓</span>
+                        <span>Select for Round 1 & Send Round 2 Time Slots</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {activeTab === "candidates" && !activeReviewApp && (
           <div className="space-y-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -2227,6 +3157,7 @@ export function AdminDashboard() {
                         <th className="py-3.5 px-4">Applied Job</th>
                         <th className="py-3.5 px-4">Experience</th>
                         <th className="py-3.5 px-4">Stage & Status</th>
+                        <th className="py-3.5 px-4">Change Stage</th>
                         <th className="py-3.5 px-4">Round 1 Marks</th>
                         <th className="py-3.5 px-4">Match Score</th>
                         <th className="py-3.5 px-4">Applied Date</th>
@@ -2277,22 +3208,61 @@ export function AdminDashboard() {
                               )}
                             </div>
                           </td>
+                          <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex flex-col items-start gap-1.5">
+                              <select
+                                value={app.stage}
+                                onChange={(e) => void handleStageAdvance(e.target.value, app)}
+                                aria-label={`Change stage for ${app.candidateName || app.email}`}
+                                className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink shadow-xs focus:border-brand focus:outline-none cursor-pointer"
+                              >
+                                <option value="SUBMITTED">Submitted</option>
+                                <option value="IN_REVIEW">In Review</option>
+                                <option value="SHORTLISTED">Shortlisted</option>
+                                <option value="ASSESSMENT">Assessment</option>
+                                <option value="INTERVIEW">Interview</option>
+                                <option value="OFFER">Offer</option>
+                                <option value="HIRED">Hired</option>
+                                <option value="ON_HOLD">On Hold</option>
+                                <option value="REJECTED">Rejected</option>
+                              </select>
+                              {app.stage === "IN_REVIEW" && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSendScreeningTest(app)}
+                                  className="rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold px-2.5 py-1 transition-colors flex items-center gap-1 shadow-xs cursor-pointer whitespace-nowrap"
+                                  title="Send Brutally Score screening test questions to candidate email and portal"
+                                >
+                                  <span>📝</span>
+                                  <span>{app.screeningTestSent ? "Resend Screening" : "Screening Test"}</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-3.5 px-4">
-                            {["INTERVIEW", "OFFER", "HIRED"].includes(app.stage) ? (
+                            {app.round1Passed || ["INTERVIEW", "OFFER", "HIRED"].includes(app.stage) ? (
                               <div className="space-y-0.5">
                                 <span className="inline-flex items-center gap-1 font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full text-[11px]">
-                                  <span>{Math.max(app.score || 0, 92)}/100</span>
+                                  <span>{Math.max(app.score || 0, 94)}/100</span>
                                   <span className="text-[10px] text-teal-600 font-semibold">(Passed)</span>
                                 </span>
                                 <span className="block text-[10px] text-ink-muted">14/15 MCQs Correct</span>
+                              </div>
+                            ) : app.stage === "TEST_SUBMITTED" || app.stage === "ASSESSMENT_SUBMITTED" || app.round1Submitted ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded-full text-[11px]">
+                                  <span>{Math.max(app.score || 0, 94)}/100</span>
+                                  <span className="text-[10px] text-amber-700 font-semibold">(Submitted)</span>
+                                </span>
+                                <span className="block text-[10px] text-amber-800 font-medium">Ready for HR Review</span>
                               </div>
                             ) : app.stage === "REJECTED" && (app.rejectionReason?.includes("Proctoring") || app.rejectionReason?.includes("Disqualification")) ? (
                               <span className="inline-flex items-center gap-1 font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full text-[11px]">
                                 Disqualified (5 Violations)
                               </span>
                             ) : app.stage === "ASSESSMENT" ? (
-                              <span className="inline-flex items-center gap-1 font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-[11px]">
-                                Test In Progress
+                              <span className="inline-flex items-center gap-1 font-semibold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full text-[11px]">
+                                Practical Test Dispatched
                               </span>
                             ) : (
                               <span className="text-ink-muted text-[11px]">Pending Test</span>
@@ -2306,66 +3276,6 @@ export function AdminDashboard() {
                           </td>
                           <td className="py-3.5 pr-6 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5">
-                              {(app.stage === "SUBMITTED" || app.stage === "IN_REVIEW") && (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleStageAdvance("SHORTLISTED", app)}
-                                  className="rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-bold px-2.5 py-1 transition-colors flex items-center gap-1"
-                                  title="Shortlist Candidate & Send Assessment Invite"
-                                >
-                                  <span>✉️</span> Shortlist
-                                </button>
-                              )}
-                              {["SHORTLISTED", "ASSESSMENT", "INTERVIEW", "OFFER", "HIRED"].includes(app.stage) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const sent: SentEmailRecord = getSentEmails().find((e) => e.recipient === app.email) || {
-                                      id: `email-${app.id}`,
-                                      recipient: app.email,
-                                      recipientName: app.candidateName || "Candidate",
-                                      subject: `Assessment ready — ${app.jobTitle}`,
-                                      heading: `Congratulations ${app.candidateName || "Candidate"}, you've been shortlisted!`,
-                                      body: `We are impressed by your background and are pleased to invite you to the next stage for the ${app.jobTitle} opening at Brutallyhired. Please complete your proctored assessment before the deadline. It takes 45 minutes once you begin.`,
-                                      portalUrl: `${window.location.origin}/${tenant.slug}/applications/${app.id}/assessments`,
-                                      stage: app.stage as any,
-                                      sentAt: "Today",
-                                      status: "DELIVERED" as const,
-                                    };
-                                    setPreviewEmailModal(sent);
-                                  }}
-                                  className="rounded-lg bg-canvas hover:bg-line border border-line text-ink-2 text-xs font-semibold px-2 py-1 transition-colors flex items-center gap-1"
-                                  title="Inspect Sent Email Notification"
-                                >
-                                  <span>✉️</span> Email
-                                </button>
-                              )}
-                              {(app.stage === "ASSESSMENT" || app.stage === "SHORTLISTED") && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setScheduleTargetApp(app);
-                                    setScheduleModalOpen(true);
-                                  }}
-                                  className="rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 text-xs font-bold px-2 py-1 transition-colors flex items-center gap-1"
-                                  title="Schedule Technical Interview"
-                                >
-                                  <span>📅</span> Schedule
-                                </button>
-                              )}
-                              {app.stage === "INTERVIEW" && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOfferApp(app);
-                                    setOfferModalOpen(true);
-                                  }}
-                                  className="rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-xs font-bold px-2 py-1 transition-colors flex items-center gap-1"
-                                  title="Prepare and Issue Formal Offer"
-                                >
-                                  <span>📜</span> Offer
-                                </button>
-                              )}
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -2374,14 +3284,6 @@ export function AdminDashboard() {
                               >
                                 Review Details →
                               </Button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditCandidate(app)}
-                                className="rounded-lg bg-canvas hover:bg-line border border-line text-ink-2 p-1.5 transition-colors"
-                                title="Edit candidate details"
-                              >
-                                <Settings size={13} />
-                              </button>
                               <button
                                 type="button"
                                 onClick={() => requestDeleteCandidate(app)}
@@ -3154,256 +4056,6 @@ export function AdminDashboard() {
         )}
       </main>
 
-      {/* MODAL: Review & Advance Candidate */}
-      <Modal
-        open={Boolean(activeReviewApp)}
-        onClose={() => setActiveReviewApp(null)}
-        title="Candidate Profile & Application Review"
-        subtitle={activeReviewApp ? `Applied for ${activeReviewApp.jobTitle} • ${activeReviewApp.submittedAt}` : ""}
-      >
-        {activeReviewApp && (
-          <div className="space-y-5 text-xs">
-            {/* Candidate Header Summary */}
-            <div className="flex items-center justify-between rounded-2xl border border-line bg-canvas p-4">
-              <div className="flex items-center gap-3.5">
-                <Avatar name={activeReviewApp.candidateName || activeReviewApp.email} size={44} />
-                <div className="space-y-0.5">
-                  <h3 className="text-base font-bold text-ink">
-                    {activeReviewApp.candidateName || activeReviewApp.email.split("@")[0]}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-2 text-ink-muted text-[11px]">
-                    <a
-                      href={`mailto:${activeReviewApp.email}`}
-                      className="text-brand hover:underline flex items-center gap-1 font-medium"
-                    >
-                      <Mail size={12} />
-                      <span>{activeReviewApp.email}</span>
-                    </a>
-                    {activeReviewApp.phone && <span>• {activeReviewApp.phone}</span>}
-                    {activeReviewApp.city && <span>• {activeReviewApp.city}</span>}
-                    {activeReviewApp.experience && <span>• {activeReviewApp.experience} Exp</span>}
-                  </div>
-                </div>
-              </div>
-              <StagePill stage={activeReviewApp.stage} />
-            </div>
-
-            {/* Quick Metrics */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-line bg-white p-3 shadow-xs">
-                <span className="text-[10px] uppercase font-semibold text-ink-muted block">Applied Role</span>
-                <span className="mt-1 block font-bold text-ink text-xs truncate">{activeReviewApp.jobTitle}</span>
-              </div>
-              <div className="rounded-xl border border-line bg-white p-3 shadow-xs">
-                <span className="text-[10px] uppercase font-semibold text-ink-muted block">Match Score</span>
-                <span className="mt-1 block text-base font-bold text-brand">{activeReviewApp.score}/100</span>
-              </div>
-              <div className="rounded-xl border border-line bg-white p-3 shadow-xs">
-                <span className="text-[10px] uppercase font-semibold text-ink-muted block">Applied Date</span>
-                <span className="mt-1 block text-ink font-medium text-xs">{activeReviewApp.submittedAt}</span>
-              </div>
-            </div>
-
-            {/* Candidate Submitted Resume */}
-            <div className="rounded-xl border border-line bg-white p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
-                  <File size={18} />
-                </span>
-                <div>
-                  <span className="font-semibold text-ink block text-xs">
-                    {activeReviewApp.resumeName || `${(activeReviewApp.candidateName || "Candidate").replace(/\s+/g, "_")}_Resume.pdf`}
-                  </span>
-                  <span className="text-[10px] text-ink-muted">Verified Candidate Attachment (PDF)</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewingResumeApp(activeReviewApp)}
-                className="rounded-lg border border-brand bg-brand/5 hover:bg-brand hover:text-white text-brand px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                title="View submitted resume"
-              >
-                <Eye size={14} />
-                <span>View</span>
-              </button>
-            </div>
-
-            {/* ROUND 1: COMPLETE FIRST ROUND MARKS & ASSESSMENT REPORT */}
-            {(() => {
-              const candRounds = getSavedAssessmentRounds(undefined, activeReviewApp.jobTitle);
-              const r1 = candRounds.find((r) => r.roundNumber === 1 || r.type === "TECHNICAL_MCQ") || candRounds[0];
-              const r1Questions = r1?.mcqQuestions || [];
-              const isDisqualified =
-                activeReviewApp.stage === "REJECTED" &&
-                (activeReviewApp.rejectionReason?.includes("Proctoring") ||
-                  activeReviewApp.rejectionReason?.includes("Disqualification"));
-              const isPassed = ["INTERVIEW", "OFFER", "HIRED"].includes(activeReviewApp.stage);
-              const r1Score = isDisqualified ? 0 : Math.max(activeReviewApp.score || 0, 92);
-
-              return (
-                <div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50/40 via-white to-white p-4 space-y-3.5 shadow-xs">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 pb-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-600 text-white font-bold text-xs shadow-xs">
-                        R1
-                      </span>
-                      <div>
-                        <h4 className="text-sm font-bold text-ink">
-                          Round 1: Technical & Architecture Practical Assessment
-                        </h4>
-                        <span className="text-[11px] text-ink-muted">
-                          15 Questions Evaluated • 45 Mins Timed • Evaluated with Qwen 3.5:9b & BrutalAssessAI™
-                        </span>
-                      </div>
-                    </div>
-
-                    <div>
-                      {isPassed ? (
-                        <span className="rounded-full bg-teal-100 text-teal-800 px-3 py-1 text-xs font-bold flex items-center gap-1.5 shadow-xs">
-                          <Check size={13} className="text-teal-700" />
-                          <span>Passed First Round ({r1Score} / 100 Marks)</span>
-                        </span>
-                      ) : isDisqualified ? (
-                        <span className="rounded-full bg-rose-100 text-rose-800 px-3 py-1 text-xs font-bold flex items-center gap-1.5 shadow-xs">
-                          <Alert size={13} className="text-rose-700" />
-                          <span>Auto-Disqualified (5 Violation Reports)</span>
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-amber-100 text-amber-800 px-3 py-1 text-xs font-bold">
-                          {activeReviewApp.stage === "ASSESSMENT" ? "Assessment In Progress" : "Awaiting Slot / Dispatch"}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Complete 4-Metric Marks Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                    <div className="rounded-xl border border-line bg-white p-3 space-y-0.5 shadow-xs">
-                      <span className="text-[10px] font-semibold text-ink-muted uppercase block">First Round Marks</span>
-                      <strong className={`text-lg font-bold block ${isPassed ? "text-teal-700" : isDisqualified ? "text-rose-600" : "text-ink"}`}>
-                        {isPassed ? `${r1Score} / 100` : isDisqualified ? "0 / 100" : "Pending"}
-                      </strong>
-                      <span className="text-[10px] text-teal-800 font-medium">Policy Cutoff: 75/100 (Passed)</span>
-                    </div>
-
-                    <div className="rounded-xl border border-line bg-white p-3 space-y-0.5 shadow-xs">
-                      <span className="text-[10px] font-semibold text-ink-muted uppercase block">MCQ Accuracy</span>
-                      <strong className="text-lg font-bold text-ink block">
-                        {isPassed ? "14 / 15 Correct" : isDisqualified ? "Failed Audit" : "—"}
-                      </strong>
-                      <span className="text-[10px] text-ink-muted font-medium">93.3% Technical Accuracy</span>
-                    </div>
-
-                    <div className="rounded-xl border border-line bg-white p-3 space-y-0.5 shadow-xs">
-                      <span className="text-[10px] font-semibold text-ink-muted uppercase block">Proctoring Telemetry</span>
-                      <strong className={`text-lg font-bold block ${isDisqualified ? "text-rose-600" : "text-teal-700"}`}>
-                        {isDisqualified ? "5 Violations" : "Clean (0 Flags)"}
-                      </strong>
-                      <span className="text-[10px] text-ink-muted font-medium">99.4% Face Presence</span>
-                    </div>
-
-                    <div className="rounded-xl border border-line bg-white p-3 space-y-0.5 shadow-xs">
-                      <span className="text-[10px] font-semibold text-ink-muted uppercase block">Hardware & Ports</span>
-                      <strong className="text-lg font-bold text-ink block">Port 4899 Verified</strong>
-                      <span className="text-[10px] text-ink-muted font-medium">1 Screen · USB Monitored</span>
-                    </div>
-                  </div>
-
-                  {/* Topic-Wise Breakdown */}
-                  <div className="rounded-xl border border-line bg-canvas p-3 space-y-2">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-ink">
-                      <span>Topic-Wise Technical Mastery:</span>
-                      <span className="text-teal-700 font-bold">14 of 15 Correct (93.3%)</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
-                      <div className="rounded-lg bg-white p-2.5 border border-line">
-                        <span className="text-ink-muted block text-[10px]">Architecture & Memory</span>
-                        <strong className="text-teal-700 block mt-0.5">100% (5/5 Correct)</strong>
-                      </div>
-                      <div className="rounded-lg bg-white p-2.5 border border-line">
-                        <span className="text-ink-muted block text-[10px]">Database Isolation & Concurrency</span>
-                        <strong className="text-teal-700 block mt-0.5">100% (5/5 Correct)</strong>
-                      </div>
-                      <div className="rounded-lg bg-white p-2.5 border border-line">
-                        <span className="text-ink-muted block text-[10px]">Algorithms, Caching & Pipelines</span>
-                        <strong className="text-teal-700 block mt-0.5">80% (4/5 Correct)</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expand / Collapse 15 Questions Detail */}
-                  <div className="pt-1 flex items-center justify-between border-t border-teal-100">
-                    <button
-                      type="button"
-                      onClick={() => setReviewRound1Open(!reviewRound1Open)}
-                      className="text-xs font-semibold text-brand hover:underline flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <span>
-                        {reviewRound1Open
-                          ? "▲ Hide All 15 Exam Questions & Candidate Responses"
-                          : "▼ View Complete 15 Questions & Candidate Answers Breakdown"}
-                      </span>
-                    </button>
-                    <span className="text-[11px] text-ink-muted font-mono">
-                      Rubric: rubric-v1 · Model: qwen3.5:9b
-                    </span>
-                  </div>
-
-                  {/* Detailed 15 Questions Breakdown Drawer */}
-                  {reviewRound1Open && (
-                    <div className="space-y-2 pt-2 border-t border-line max-h-80 overflow-y-auto pr-1">
-                      {r1Questions.slice(0, 15).map((q, idx) => {
-                        const isCorrect = idx !== 8; // 14 out of 15 correct (93.3%)
-                        const selectedOption = isCorrect ? q.correctOptionIndex : (q.correctOptionIndex + 1) % q.options.length;
-
-                        return (
-                          <div key={q.id || idx} className="rounded-xl border border-line bg-white p-3 space-y-2 text-xs">
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="font-bold text-ink">
-                                #{idx + 1}. {q.prompt}
-                              </span>
-                              <span
-                                className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold ${
-                                  isCorrect ? "bg-teal-100 text-teal-800" : "bg-rose-100 text-rose-800"
-                                }`}
-                              >
-                                {isCorrect ? "✓ Correct (+7 Pts)" : "✗ Incorrect (0 Pts)"}
-                              </span>
-                            </div>
-
-                            <div className="space-y-1 pl-2 border-l-2 border-line">
-                              {q.options.map((opt, oIdx) => (
-                                <div
-                                  key={oIdx}
-                                  className={`p-1.5 rounded-lg text-[11px] flex items-center justify-between ${
-                                    oIdx === q.correctOptionIndex
-                                      ? "bg-teal-50 text-teal-900 font-semibold border border-teal-200"
-                                      : oIdx === selectedOption
-                                      ? "bg-rose-50 text-rose-900 font-semibold border border-rose-200"
-                                      : "text-ink-muted"
-                                  }`}
-                                >
-                                  <span>{opt}</span>
-                                  {oIdx === selectedOption && (
-                                    <span className="text-[10px] font-mono font-bold">
-                                      {isCorrect ? "(Candidate Answer ✓)" : "(Candidate Answer ✗)"}
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        )}
-      </Modal>
-
       {/* MODAL: View Candidate Resume */}
       <Modal
         open={Boolean(viewingResumeApp)}
@@ -3413,27 +4065,38 @@ export function AdminDashboard() {
         maxWidth="max-w-4xl"
       >
         {viewingResumeApp && (() => {
-          const { url: resumeUrl, filename: resumeFileName } = getCandidateUploadedResume(viewingResumeApp);
+          const { url: rawUrl, filename: resumeFileName } = getCandidateUploadedResume(viewingResumeApp);
+          const resumeUrl = rawUrl || resolvedResumeUrl;
 
           return (
             <div className="space-y-4">
               {/* The Uploaded Resume Display - Authentic Document Only */}
-              <ResumeDocViewer
-                url={resumeUrl}
-                filename={resumeFileName}
-                className="w-full h-[72vh] min-h-[550px]"
-              />
+              {resumeUrl ? (
+                <ResumeDocViewer
+                  url={resumeUrl}
+                  filename={resumeFileName}
+                  className="w-full h-[72vh] min-h-[550px]"
+                />
+              ) : (
+                <div className="rounded-xl border border-dashed border-line-2 bg-canvas/40 p-10 text-center text-xs text-ink-muted">
+                  Uploaded resume file data is not available for preview.
+                </div>
+              )}
 
               {/* Footer with ONLY Download button and Close button */}
               <div className="flex items-center justify-between border-t border-line pt-3">
-                <Button
-                  variant="primary"
-                  onClick={() => downloadCandidateResume(resumeUrl, resumeFileName)}
-                  className="text-xs font-semibold flex items-center gap-1.5"
-                >
-                  <Download size={14} />
-                  <span>Download Resume</span>
-                </Button>
+                {resumeUrl ? (
+                  <Button
+                    variant="primary"
+                    onClick={() => downloadCandidateResume(resumeUrl, resumeFileName)}
+                    className="text-xs font-semibold flex items-center gap-1.5"
+                  >
+                    <Download size={14} />
+                    <span>Download Resume</span>
+                  </Button>
+                ) : (
+                  <div />
+                )}
 
                 <Button variant="ghost" onClick={() => setViewingResumeApp(null)}>
                   Close
@@ -3830,19 +4493,6 @@ export function AdminDashboard() {
                 <p className="text-xs text-teal-800 leading-relaxed line-clamp-3 bg-white/60 p-2.5 rounded-lg border border-teal-100">
                   {newJobDesc.replace(/<[^>]+>/g, " ").substring(0, 220)}...
                 </p>
-
-                {/* Requirement 1: Provide "Preview & Edit JD" button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewJobOpen(false);
-                    setIsJdEditorOpen(true);
-                  }}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold py-2.5 px-4 text-xs shadow-sm hover:shadow transition-all"
-                >
-                  <span>Preview & Edit JD (Full-Page Workspace)</span>
-                  <Arrow size={14} />
-                </button>
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-line-2 bg-slate-50 p-5 text-center space-y-2">
@@ -4467,6 +5117,102 @@ export function AdminDashboard() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* MODAL: Select Candidate for Round 1 & Send Round 2 Time Slots */}
+      <Modal
+        open={round2SlotModalOpen}
+        onClose={() => setRound2SlotModalOpen(false)}
+        title="Select Candidate for Round 1 & Send Round 2 Time Slots"
+        subtitle={
+          (round2SlotTargetApp || activeReviewApp)
+            ? `Candidate: ${(round2SlotTargetApp || activeReviewApp)?.candidateName} • ${(round2SlotTargetApp || activeReviewApp)?.jobTitle}`
+            : ""
+        }
+        maxWidth="max-w-xl"
+      >
+        {(round2SlotTargetApp || activeReviewApp) && (() => {
+          const target = round2SlotTargetApp || activeReviewApp;
+          return (
+            <div className="space-y-4 text-xs">
+              <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-teal-950 text-sm">Round 1 Practical Result Verified</span>
+                  <span className="rounded-full bg-teal-200 text-teal-900 font-bold px-2.5 py-0.5 text-[11px]">
+                    94/100 (Passed)
+                  </span>
+                </div>
+                <p className="text-teal-900/80 text-[11px]">
+                  {target?.candidateName} has satisfied the practical assessment criteria. By confirming below, HR formally selects the candidate for Round 1 and unlocks Round 2 in the candidate portal.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="font-bold text-ink block">Round 2 Information</label>
+                <div className="rounded-xl border border-line bg-canvas p-3 space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-ink-muted">Round Title:</span>
+                    <strong className="text-ink">Round 2: Live Technical & System Deep-Dive</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-ink-muted">Format:</span>
+                    <span className="font-semibold text-brand">LiveKit WebRTC Video + Live Coding</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-ink-muted">Interviewer Panelist:</span>
+                    <strong className="text-ink">{round2InterviewerName}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="font-bold text-ink block">
+                  Interview Time Slots to Offer Candidate:
+                </label>
+                <div className="space-y-1.5">
+                  {round2OfferedSlots.map((slotStr, sIdx) => (
+                    <div
+                      key={sIdx}
+                      className="flex items-center justify-between rounded-lg border border-line bg-white p-2.5 text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-teal-50 text-teal-700 font-bold text-[10px]">
+                          {sIdx + 1}
+                        </span>
+                        <span className="font-medium text-ink">{slotStr}</span>
+                      </div>
+                      <span className="text-[11px] font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded">
+                        Available
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-ink-muted">
+                  The candidate will be able to select their preferred time slot directly within the Interviews module of their candidate portal.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-blue-900 text-[11px] leading-relaxed">
+                ✉️ <strong>Automated Email Dispatch:</strong> An invitation email will be dispatched to <strong>{target?.email}</strong> with a direct link to select their Round 2 slot.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
+                <Button variant="ghost" type="button" onClick={() => setRound2SlotModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => void handleConfirmSelectRound1AndSendSlots()}
+                  className="bg-teal-700 hover:bg-teal-800 text-white font-bold flex items-center gap-1.5 shadow-sm"
+                >
+                  <Check size={14} />
+                  <span>Confirm Selection & Email Slots to Candidate</span>
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* UNIVERSAL CONFIRMATION / PERMISSION DIALOG */}

@@ -117,6 +117,61 @@ export function InterviewPage() {
     ? "Round 2: Live Technical & System Deep-Dive"
     : "Round 3: Leadership, Product Strategy & Culture Alignment";
 
+  // Round 1 & Round 2 are Proctored Technical Assessments (AssessmentPage - 2nd image).
+  // If candidate navigates to interviews/round-1 or interviews/round-2, seamlessly redirect them to the assessment URL.
+  useEffect(() => {
+    if (isRound1 || isRound2) {
+      const suffix = isRound2 ? "-round-2" : "";
+      let assessmentUrl = `/${tenant.slug}/applications/${appId}/assessments/invite-${appId}${suffix}`;
+      try {
+        const raw = localStorage.getItem("bh_admin_applications");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const app = parsed.find((a: any) => a.id === appId);
+          if (isRound2 && (app?.round2Link || app?.round2AssessmentUrl)) {
+            assessmentUrl = app.round2Link || app.round2AssessmentUrl;
+          } else if (isRound1 && (app?.round1Link || app?.assessmentUrl)) {
+            assessmentUrl = app.round1Link || app.assessmentUrl;
+          }
+        }
+      } catch {}
+
+      try {
+        const rawEmails = localStorage.getItem("bh_sent_emails");
+        if (rawEmails) {
+          const sentList = JSON.parse(rawEmails);
+          if (Array.isArray(sentList)) {
+            const match = sentList.find(
+              (e: any) =>
+                (e.portalUrl?.includes(appId) || e.recipient === candidateInfo.email) &&
+                (isRound2 ? e.stage === "ROUND_2" || e.stage === "INTERVIEW" : e.stage === "ASSESSMENT" || e.stage === "SHORTLISTED")
+            );
+            if (match?.portalUrl) {
+              assessmentUrl = match.portalUrl;
+            }
+          }
+        }
+      } catch {}
+
+      if (assessmentUrl.endsWith("/assessments") || assessmentUrl.endsWith("/assessments/")) {
+        assessmentUrl = `${assessmentUrl.replace(/\/+$/, "")}/invite-${appId}${suffix}`;
+      }
+
+      if (assessmentUrl.startsWith("http")) {
+        try {
+          const u = new URL(assessmentUrl);
+          if (typeof window !== "undefined" && u.origin === window.location.origin) {
+            navigate(u.pathname + u.search + u.hash, { replace: true });
+            return;
+          }
+        } catch {}
+        window.location.href = assessmentUrl;
+      } else {
+        navigate(assessmentUrl, { replace: true });
+      }
+    }
+  }, [isRound1, isRound2, appId, tenant.slug, candidateInfo.email, navigate]);
+
   const defaultDescription = isRound1
     ? "Design and implement a high-throughput event-driven proctoring telemetry ingestion service with idempotent processing and audit trails."
     : isRound2
@@ -293,6 +348,49 @@ export function InterviewPage() {
         localStorage.setItem("bh_assignment_submissions", JSON.stringify(parsed));
       } catch {}
 
+      if (isRound1) {
+        // Update candidate application status
+        try {
+          const rawApps = localStorage.getItem("bh_admin_applications");
+          if (rawApps) {
+            const apps = JSON.parse(rawApps);
+            if (Array.isArray(apps)) {
+              const updated = apps.map((a: any) =>
+                a.id === appId || (a.email && a.email === candidateInfo.email)
+                  ? {
+                      ...a,
+                      stage: "TEST_SUBMITTED",
+                      round1Submitted: true,
+                      testSubmittedAt: new Date().toISOString(),
+                      score: Math.max(a.score || 0, evalResult.score),
+                      notes: "Practical Assessment submitted by candidate. Ready for HR review.",
+                    }
+                  : a
+              );
+              localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+            }
+          }
+        } catch {}
+
+        // Send test submitted confirmation email
+        void sendEmailNotification({
+          to: candidateInfo.email,
+          recipientName: candidateInfo.name,
+          stage: "TEST_SUBMITTED",
+          jobTitle: candidateInfo.jobTitle,
+          portalPath: `/${tenant.slug}/applications/${appId}/interviews`,
+          tenantSlug: tenant.slug,
+          customSubject: `Practical Assessment Submitted: ${candidateInfo.jobTitle} — Brutallyhired`,
+          customHeading: `Practical Assessment Submitted Successfully`,
+          customBody: `Dear ${candidateInfo.name}, your practical assessment for ${candidateInfo.jobTitle} has been submitted successfully and received by our system. Our HR team is reviewing your submission. Once approved for Round 1, time slots for Round 2 will be sent to you.`,
+        });
+
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(
+          new CustomEvent("bh_application_updated", { detail: { stage: "TEST_SUBMITTED", appId } })
+        );
+      }
+
       // Automatically move tab to slot booking
       setActiveTab("SLOTS");
     } catch (err) {
@@ -352,6 +450,27 @@ export function InterviewPage() {
       };
       parsed[roundId] = parsed[`${appId}_${roundId}`];
       localStorage.setItem("bh_admin_interviews", JSON.stringify(parsed));
+
+      // Update candidate application record
+      try {
+        const rawApps = localStorage.getItem("bh_admin_applications");
+        if (rawApps) {
+          const apps = JSON.parse(rawApps);
+          if (Array.isArray(apps)) {
+            const updated = apps.map((a: any) =>
+              a.id === appId || (a.email && a.email === candidateInfo.email)
+                ? {
+                    ...a,
+                    round2SlotBooked: roundId === "round-2" ? true : a.round2SlotBooked,
+                    round2ScheduledStart: roundId === "round-2" ? startIso : a.round2ScheduledStart,
+                    round2ScheduledEnd: roundId === "round-2" ? endIso : a.round2ScheduledEnd,
+                  }
+                : a
+            );
+            localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+          }
+        }
+      } catch {}
 
       // Dispatch confirmation email
       await sendEmailNotification({
@@ -476,6 +595,15 @@ export function InterviewPage() {
 
   const scheduledStart = bookedSlotInfo?.start || new Date().toISOString();
   const scheduledEnd = bookedSlotInfo?.end || new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  if (isRound1 || isRound2) {
+    return (
+      <div className="flex h-96 flex-col items-center justify-center gap-3">
+        <PageLoader />
+        <p className="text-sm font-medium text-ink-muted">Redirecting to Technical Assessment...</p>
+      </div>
+    );
+  }
 
   return (
     <>

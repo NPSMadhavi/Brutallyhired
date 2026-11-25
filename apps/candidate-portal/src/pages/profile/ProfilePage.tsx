@@ -236,26 +236,79 @@ export function ProfilePage() {
     toast("Qualification removed");
   };
 
-  // Determine latest uploaded candidate resume
+  // Determine latest uploaded candidate resume for the signed-in user
   const latestResume = (() => {
+    const userEmail = me.data?.email?.toLowerCase();
+    const apiResume = profile.data?.latestResume;
+
+    if (apiResume?.name && apiResume?.url) {
+      return {
+        filename: apiResume.name,
+        url: apiResume.url,
+        uploadedAt: "Verified Candidate Attachment (PDF)",
+      };
+    }
+
     try {
       const stored = localStorage.getItem("bh_last_uploaded_resume");
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.url) {
+        const matchesUser = parsed.email
+          ? !userEmail || parsed.email.toLowerCase() === userEmail
+          : parsed.filename !== "Amirti_Tanuja_Round2_Task.pdf";
+        if (parsed.url && parsed.filename && matchesUser) {
           return {
-            filename: parsed.filename || "Amirti_Tanuja_Round2_Task.pdf",
-            url: parsed.url,
-            uploadedAt: parsed.uploadedAt || "Verified Candidate Attachment (PDF)",
+            filename: parsed.filename as string,
+            url: parsed.url as string,
+            uploadedAt: (parsed.uploadedAt as string) || "Verified Candidate Attachment (PDF)",
           };
         }
       }
     } catch {}
-    return {
-      filename: "Amirti_Tanuja_Round2_Task.pdf",
-      url: "/resumes/Amirti_Tanuja_Round2_Task.pdf",
-      uploadedAt: "Verified Candidate Attachment (PDF)",
-    };
+
+    try {
+      const savedApps = localStorage.getItem("bh_admin_applications");
+      if (savedApps) {
+        const apps = JSON.parse(savedApps) as Array<{
+          email?: string;
+          resumeName?: string;
+          resumeDataUrl?: string;
+        }>;
+        const match = apps.find(
+          (a) =>
+            a.resumeName &&
+            (!userEmail || a.email?.toLowerCase() === userEmail)
+        );
+        if (match?.resumeName) {
+          return {
+            filename: match.resumeName,
+            url: match.resumeDataUrl || "",
+            uploadedAt: "Verified Candidate Attachment (PDF)",
+          };
+        }
+      }
+    } catch {}
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("bh_draft_")) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.resume?.name) {
+              return {
+                filename: parsed.resume.name as string,
+                url: (parsed.resumeDataUrl as string) || "",
+                uploadedAt: "Verified Candidate Attachment (PDF)",
+              };
+            }
+          }
+        }
+      }
+    } catch {}
+
+    return null;
   })();
 
   const form = useForm<ProfileInput>({
@@ -431,51 +484,63 @@ export function ProfilePage() {
                 <File size={22} className="text-forest" />
                 <h2 className="text-[19px] font-semibold text-ink">Latest uploaded resume</h2>
               </div>
-              <Pill tone="teal" dot>
-                Active Resume
-              </Pill>
+              {latestResume ? (
+                <Pill tone="teal" dot>
+                  Active Resume
+                </Pill>
+              ) : (
+                <Pill tone="gray">No Resume</Pill>
+              )}
             </div>
 
             <p className="text-xs text-ink-muted -mt-2">
               This resume is currently attached to your profile and submitted applications.
             </p>
 
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-line-soft bg-canvas/50 p-4">
-              <div className="flex items-center gap-3.5 min-w-0">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-500 border border-red-100 shadow-xs">
-                  <File size={22} />
+            {latestResume ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-line-soft bg-canvas/50 p-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-500 border border-red-100 shadow-xs">
+                    <File size={22} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-semibold text-ink truncate" title={latestResume.filename}>
+                      {latestResume.filename}
+                    </span>
+                    <span className="text-xs text-ink-muted truncate">
+                      {latestResume.uploadedAt}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-sm font-semibold text-ink truncate" title={latestResume.filename}>
-                    {latestResume.filename}
-                  </span>
-                  <span className="text-xs text-ink-muted truncate">
-                    {latestResume.uploadedAt}
-                  </span>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => setViewResumeOpen(true)}
-                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2"
-                >
-                  <Eye size={15} />
-                  <span>View</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => downloadFile(latestResume.url, latestResume.filename)}
-                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2"
-                >
-                  <Download size={15} />
-                  <span>Download</span>
-                </Button>
+                {latestResume.url && (
+                  <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => setViewResumeOpen(true)}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2"
+                    >
+                      <Eye size={15} />
+                      <span>View</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => downloadFile(latestResume.url, latestResume.filename)}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2"
+                    >
+                      <Download size={15} />
+                      <span>Download</span>
+                    </Button>
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-line-2 bg-canvas/30 p-5 text-center text-xs text-ink-muted">
+                No resume uploaded yet. Upload your resume when applying for a position and it will appear here.
+              </div>
+            )}
           </section>
         </div>
 
@@ -507,37 +572,39 @@ export function ProfilePage() {
       </div>
 
       {/* Modal: View Candidate Resume */}
-      <Modal
-        open={viewResumeOpen}
-        onClose={() => setViewResumeOpen(false)}
-        title={latestResume.filename}
-        subtitle="Uploaded Candidate Resume Preview"
-        maxWidth="max-w-4xl"
-      >
-        <div className="space-y-4">
-          <ResumeDocViewer
-            url={latestResume.url}
-            filename={latestResume.filename}
-            className="w-full h-[72vh] min-h-[550px]"
-          />
+      {latestResume && latestResume.url && (
+        <Modal
+          open={viewResumeOpen}
+          onClose={() => setViewResumeOpen(false)}
+          title={latestResume.filename}
+          subtitle="Uploaded Candidate Resume Preview"
+          maxWidth="max-w-4xl"
+        >
+          <div className="space-y-4">
+            <ResumeDocViewer
+              url={latestResume.url}
+              filename={latestResume.filename}
+              className="w-full h-[72vh] min-h-[550px]"
+            />
 
-          <div className="flex items-center justify-between border-t border-line pt-3">
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => downloadFile(latestResume.url, latestResume.filename)}
-              className="text-xs font-semibold flex items-center gap-1.5"
-            >
-              <Download size={14} />
-              <span>Download Resume</span>
-            </Button>
+            <div className="flex items-center justify-between border-t border-line pt-3">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => downloadFile(latestResume.url, latestResume.filename)}
+                className="text-xs font-semibold flex items-center gap-1.5"
+              >
+                <Download size={14} />
+                <span>Download Resume</span>
+              </Button>
 
-            <Button type="button" variant="ghost" onClick={() => setViewResumeOpen(false)}>
-              Close
-            </Button>
+              <Button type="button" variant="ghost" onClick={() => setViewResumeOpen(false)}>
+                Close
+              </Button>
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
       {/* Modal: Edit / Add Educational Qualification */}
       <Modal

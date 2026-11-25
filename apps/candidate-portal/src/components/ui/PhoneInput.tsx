@@ -280,7 +280,7 @@ export function PhoneInput({
 
   return (
     <div ref={dropdownRef} className="relative flex w-full">
-      {/* Country Selector Trigger matching [🇸🇬 SG +65 ▼] */}
+      {/* Country Selector Trigger matching [IN +91 ▼] */}
       <button
         type="button"
         disabled={disabled}
@@ -293,9 +293,6 @@ export function PhoneInput({
           disabled && "opacity-60 cursor-not-allowed",
         )}
       >
-        <span className="text-xl leading-none" role="img" aria-label={selectedCountry.name}>
-          {selectedCountry.flag}
-        </span>
         <span className="font-bold text-ink text-[13px] tracking-wide">
           {selectedCountry.code}
         </span>

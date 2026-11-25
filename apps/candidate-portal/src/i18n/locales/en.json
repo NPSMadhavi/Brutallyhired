@@ -280,10 +280,13 @@
     "SUBMITTED": "Submitted",
     "IN_REVIEW": "In review",
     "ASSESSMENT": "Assessment",
+    "SHORTLISTED": "Shortlisted",
     "INTERVIEW": "Interviews",
+    "INTERVIEW_SCHEDULED": "Interview Scheduled",
     "OFFER": "Offer",
     "ONBOARDING": "Onboarding",
     "HIRED": "Hired",
+    "REJECTED": "Rejected",
     "NOT_SELECTED": "Closed",
     "WITHDRAWN": "Withdrawn"
   },
@@ -388,6 +391,10 @@
         "title": "This application is closed",
         "body": "Thank you for applying. The team won’t be moving forward this time."
       },
+      "REJECTED": {
+        "title": "Application rejected",
+        "body": "Thank you for applying. Unfortunately, your application was not selected to move forward."
+      },
       "OFFER_DECLINED": {
         "title": "You declined the offer",
         "body": "Thanks for letting us know."
@@ -462,6 +469,34 @@
     "application_closed": {
       "title": "Application closed",
       "body": ""
+    },
+    "application_rejected": {
+      "title": "Application rejected",
+      "body": "Unfortunately, your application was not selected to move forward."
+    },
+    "shortlisted": {
+      "title": "Shortlisted for next steps",
+      "body": "Your application has been shortlisted by the hiring team."
+    },
+    "screening_invited": {
+      "title": "Screening test sent",
+      "body": "Please complete the screening test questions from your portal."
+    },
+    "screening_reminder": {
+      "title": "Screening test reminder",
+      "body": "Reminder: please submit your screening test before the {{days}}-day link expires."
+    },
+    "screening_submitted": {
+      "title": "Screening test submitted",
+      "body": "Your screening responses were submitted (Score: {{score}}%)."
+    },
+    "round1_slot_booked": {
+      "title": "Round 1 slot booked",
+      "body": "Scheduled for {{when}}. Link unlocks 10 minutes prior."
+    },
+    "on_hold": {
+      "title": "Application placed on hold",
+      "body": "The hiring team is reviewing candidate batches and will update you soon."
     },
     "hired": {
       "title": "Welcome to the team",

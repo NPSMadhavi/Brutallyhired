@@ -143,6 +143,14 @@ export function getStandardGlobalScreeningQuestions(): ScreeningQuestion[] {
 }
 
 // Helper to read current screening cutoff threshold for a job or globally
+export function getScreeningDeadlineDays(): number {
+  const saved = localStorage.getItem("bh_screening_expiry_days");
+  if (saved && !Number.isNaN(Number(saved)) && Number(saved) > 0) {
+    return Number(saved);
+  }
+  return 5;
+}
+
 export function getScreeningCutoffThreshold(jobId?: string): number {
   if (typeof window === "undefined") return 70;
   if (jobId && jobId !== "ALL") {
@@ -187,7 +195,7 @@ export function BrutallyScoreModule({ jobs, tenant }: BrutallyScoreModuleProps) 
 
   const [resumeThreshold, setResumeThreshold] = useState<number>(75);
   const [screeningThreshold, setScreeningThreshold] = useState<number>(70);
-  const [screeningDeadlineDays, setScreeningDeadlineDays] = useState<number>(3);
+  const [screeningDeadlineDays, setScreeningDeadlineDays] = useState<number>(() => getScreeningDeadlineDays());
   const [autoShortlist, setAutoShortlist] = useState<boolean>(true);
   const [strictProctoring, setStrictProctoring] = useState<boolean>(true);
   const [roleNotice, setRoleNotice] = useState<string>("");
@@ -201,7 +209,7 @@ export function BrutallyScoreModule({ jobs, tenant }: BrutallyScoreModuleProps) 
         const parsed: RoleThresholdPolicy = JSON.parse(savedThreshold);
         setResumeThreshold(parsed.resumeScoreThreshold ?? 75);
         setScreeningThreshold(parsed.screeningScoreThreshold ?? 70);
-        setScreeningDeadlineDays(parsed.screeningDeadlineDays ?? 3);
+        setScreeningDeadlineDays(parsed.screeningDeadlineDays ?? 5);
         setAutoShortlist(parsed.autoShortlistOnPass ?? true);
         setStrictProctoring(parsed.strictProctoring ?? true);
       } catch {
@@ -210,7 +218,7 @@ export function BrutallyScoreModule({ jobs, tenant }: BrutallyScoreModuleProps) 
     } else {
       setResumeThreshold(75);
       setScreeningThreshold(70);
-      setScreeningDeadlineDays(3);
+      setScreeningDeadlineDays(getScreeningDeadlineDays());
       setAutoShortlist(true);
       setStrictProctoring(true);
     }
@@ -229,8 +237,9 @@ export function BrutallyScoreModule({ jobs, tenant }: BrutallyScoreModuleProps) 
     };
     localStorage.setItem(`bh_role_threshold_${selectedJob.id}`, JSON.stringify(policy));
     localStorage.setItem("bh_screening_cutoff_threshold", String(screeningThreshold));
+    localStorage.setItem("bh_screening_expiry_days", String(screeningDeadlineDays));
     window.dispatchEvent(new Event("storage"));
-    setRoleNotice(`Screening cutoff threshold (${screeningThreshold}/100) saved for ${selectedJob.title}!`);
+    setRoleNotice(`Screening cutoff (${screeningThreshold}/100) & ${screeningDeadlineDays}-day expiry saved for ${selectedJob.title}!`);
     setTimeout(() => setRoleNotice(""), 3000);
   };
 
@@ -555,8 +564,8 @@ export function BrutallyScoreModule({ jobs, tenant }: BrutallyScoreModuleProps) 
                 >
                   <option value={1}>1 Day Deadline</option>
                   <option value={2}>2 Days Deadline</option>
-                  <option value={3}>3 Days (Diagram 1 Standard)</option>
-                  <option value={5}>5 Days</option>
+                  <option value={3}>3 Days</option>
+                  <option value={5}>5 Days (Standard)</option>
                   <option value={7}>7 Days</option>
                 </select>
               </div>

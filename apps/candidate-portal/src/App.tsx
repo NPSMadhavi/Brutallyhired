@@ -7,6 +7,7 @@ import { PageLoader } from "@/components/ui/feedback";
 import { AdminDashboard } from "@/pages/admin/AdminDashboard";
 import { ApplicationsListPage } from "@/pages/applications/ApplicationsListPage";
 import { OverviewPage } from "@/pages/applications/OverviewPage";
+import { ScreeningTestPage } from "@/pages/applications/ScreeningTestPage";
 import { ApplyEntry } from "@/pages/apply/ApplyEntry";
 import { ApplyLayout } from "@/pages/apply/ApplyLayout";
 import { DetailsStep } from "@/pages/apply/DetailsStep";
@@ -73,6 +74,7 @@ const router = createBrowserRouter([
             children: [
               { path: "applications", element: <ApplicationsListPage /> },
               { path: "applications/:appId", element: <OverviewPage /> },
+              { path: "applications/:appId/screening", element: <ScreeningTestPage /> },
               { path: "assessment/:inviteId", element: <AssessmentPage /> },
               { path: "assessments/:inviteId", element: <AssessmentPage /> },
               { path: "applications/:appId/assessments", element: <AssessmentsPage /> },

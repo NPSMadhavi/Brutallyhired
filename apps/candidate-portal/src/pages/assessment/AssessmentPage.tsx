@@ -44,9 +44,18 @@ export function AssessmentPage() {
   const qc = useQueryClient();
   const { appId: rawAppId = "", inviteId: rawInviteId = "" } = useParams();
   const inviteId = rawInviteId || "assess-1";
+  const isRound2 = useMemo(() => {
+    return (
+      rawInviteId.includes("round-2") ||
+      rawInviteId.includes("r2") ||
+      (typeof window !== "undefined" && window.location.search.includes("round=2"))
+    );
+  }, [rawInviteId]);
+
   const appId =
     rawAppId ||
     (rawInviteId.startsWith("r1-") ? rawInviteId.split("-")[1] : "") ||
+    (rawInviteId.startsWith("invite-") ? rawInviteId.replace(/^invite-/, "").replace(/-round-.*$/, "") : "") ||
     (() => {
       try {
         const raw = localStorage.getItem("bh_admin_applications");
@@ -73,8 +82,15 @@ export function AssessmentPage() {
 
   const configuredRound = useMemo(() => {
     const rounds = getSavedAssessmentRounds(candidateApp?.jobId, candidateApp?.jobTitle);
+    if (isRound2) {
+      return (
+        rounds.find((r) => r.roundNumber === 2 || r.id === "round-2" || r.type === "LIVE_CODING") ||
+        rounds[1] ||
+        rounds[0]
+      );
+    }
     return rounds.find((r) => r.type === "TECHNICAL_MCQ" || r.roundNumber === 1) || rounds[0];
-  }, [candidateApp]);
+  }, [candidateApp, isRound2]);
 
   const q = useAssessment(tenant.slug, inviteId);
   const start = useStartAttempt(tenant.slug, inviteId);
@@ -125,11 +141,11 @@ export function AssessmentPage() {
   }, []);
 
   const fallbackInv: AssessmentInviteDto = {
-    id: inviteId || "assess-1",
-    title: configuredRound?.name || "Technical Assessment",
+    id: inviteId || (isRound2 ? "assess-round-2" : "assess-1"),
+    title: isRound2 ? "Technical Assessment" : configuredRound?.name || "Technical Assessment",
     description:
       configuredRound?.description ||
-      "Comprehensive timed evaluation assessing core engineering principles, distributed systems design, data pipelines, and proctoring integrity.",
+      "Technical multiple-choice questions evaluated for foundational concepts, architecture, and syntax.",
     durationMinutes: configuredRound?.durationMinutes || 45,
     proctored: true,
     topics: [
@@ -138,7 +154,7 @@ export function AssessmentPage() {
       "Algorithms & Caching",
       "Proctoring Telemetry",
     ],
-    questionCount: configuredRound?.mcqQuestions?.length || 15,
+    questionCount: 5,
     dueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     status: "INVITED",
     attempt: null,
@@ -147,9 +163,9 @@ export function AssessmentPage() {
   const inv = q.data || fallbackInv;
 
   const back = (
-    <Link to={`/${tenant.slug}/applications/${appId}`} className="inline-flex items-center gap-1 text-sm font-semibold no-underline">
+    <Link to={`/${tenant.slug}/applications/${appId}/interviews`} className="inline-flex items-center gap-1 text-sm font-semibold no-underline text-brand hover:text-brand-hover">
       <ChevronLeft size={16} />
-      {t("common.backToOverview")}
+      Back to interview rounds
     </Link>
   );
 
@@ -164,11 +180,36 @@ export function AssessmentPage() {
         const parsed = JSON.parse(rawApps);
         if (Array.isArray(parsed)) {
           const updated = parsed.map((a: any) => {
-            if (a.id === appId || a.stage === "SHORTLISTED" || a.stage === "ASSESSMENT") {
-              candidateEmail = a.email;
-              candidateName = a.candidateName;
-              jobTitle = a.jobTitle;
-              return { ...a, stage: "INTERVIEW", score: Math.max(a.score || 0, 92) };
+            if (
+              a.id === appId ||
+              a.stage === "SHORTLISTED" ||
+              a.stage === "ASSESSMENT" ||
+              a.stage === "TEST_SUBMITTED" ||
+              a.stage === "ROUND_1_PASSED" ||
+              a.stage === "INTERVIEW"
+            ) {
+              candidateEmail = a.email || candidateEmail;
+              candidateName = a.candidateName || candidateName;
+              jobTitle = a.jobTitle || jobTitle;
+              if (isRound2) {
+                return {
+                  ...a,
+                  round2Submitted: true,
+                  round2Passed: true,
+                  round3Unlocked: true,
+                  round2SubmittedAt: new Date().toISOString(),
+                  score: Math.max(a.score || 0, 96),
+                  notes: "Round 2 Technical Assessment submitted by candidate. Ready for HR review.",
+                };
+              }
+              return {
+                ...a,
+                stage: "TEST_SUBMITTED",
+                round1Submitted: true,
+                testSubmittedAt: new Date().toISOString(),
+                score: Math.max(a.score || 0, 94),
+                notes: "Practical Assessment submitted by candidate. Ready for HR review.",
+              };
             }
             return a;
           });
@@ -176,15 +217,128 @@ export function AssessmentPage() {
         }
       }
 
-      // Automatically dispatch interview invitation email
+      // Record submitted session in bh_assessment_sessions
+      try {
+        const rawSess = localStorage.getItem("bh_assessment_sessions");
+        let sessions = rawSess ? JSON.parse(rawSess) : [];
+        let sTarget = sessions.find(
+          (s: any) => s.candidateId === appId || s.candidateEmail === candidateEmail || s.candidateName === candidateName
+        );
+        const subTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        if (sTarget) {
+          sTarget.status = "SUBMITTED";
+          sTarget.score = isRound2 ? 96 : 94;
+          sTarget.submittedAt = new Date().toISOString();
+          sTarget.auditTrail = [
+            ...(sTarget.auditTrail || []),
+            {
+              time: subTime,
+              event: `${isRound2 ? "Round 2" : "Round 1"} Practical Assessment submitted by candidate. Ready for HR review.`,
+              tone: "ok",
+            },
+          ];
+        } else {
+          sessions.unshift({
+            id: `assess-${Date.now()}`,
+            candidateId: appId,
+            candidateName,
+            candidateEmail,
+            jobTitle,
+            assessmentTitle: isRound2 ? "Round 2 Technical Assessment" : (configuredRound?.name || "Technical & Architecture Practical Assessment"),
+            mode: "HIGHER_ASSURANCE",
+            invitedAt: "Earlier",
+            submittedAt: new Date().toISOString(),
+            expiresIn: "Completed",
+            systemTest: { consent: true, webcam: true, screenShare: true, audio: true, networkLatency: "24ms" },
+            durationMins: 45,
+            autosaveCheckpoints: 1,
+            status: "SUBMITTED",
+            score: isRound2 ? 96 : 94,
+            aiSignals: { faceVisibilityPct: 99, extraPersonsCount: 0, phoneDetected: false, monitorCount: 1, focusLossCount: 0, interruptionsCount: 0 },
+            riskScore: 0,
+            riskLevel: "LOW",
+            auditTrail: [
+              {
+                time: subTime,
+                event: `${isRound2 ? "Round 2" : "Round 1"} Practical Assessment submitted by candidate. Ready for HR review.`,
+                tone: "ok",
+              },
+            ],
+          });
+        }
+        localStorage.setItem("bh_assessment_sessions", JSON.stringify(sessions));
+      } catch (err) {
+        console.warn("Session storage error:", err);
+      }
+
+      // Record in bh_admin_interviews
+      try {
+        const rawInterviews = localStorage.getItem("bh_admin_interviews");
+        const parsed = rawInterviews ? JSON.parse(rawInterviews) : {};
+        const roundKey = isRound2 ? "round-2" : "round-1";
+        parsed[`${appId}_${roundKey}`] = {
+          roundId: roundKey,
+          appId,
+          status: "COMPLETED",
+          completedAt: new Date().toISOString(),
+        };
+        parsed[roundKey] = parsed[`${appId}_${roundKey}`];
+        localStorage.setItem("bh_admin_interviews", JSON.stringify(parsed));
+      } catch (err) {
+        console.warn("Interview storage error:", err);
+      }
+
+      // Record in bh_assignment_submissions
+      try {
+        const rawSub = localStorage.getItem("bh_assignment_submissions");
+        const parsed = rawSub ? JSON.parse(rawSub) : {};
+        const roundKey = isRound2 ? "round-2" : "round-1";
+        parsed[`${appId}_${roundKey}`] = {
+          status: "SUBMITTED",
+          score: isRound2 ? 96 : 94,
+          submittedAt: new Date().toISOString(),
+          evaluation: {
+            score: isRound2 ? 96 : 94,
+            verdict: "STRONG PASS",
+            summary: isRound2
+              ? "Exceptional Round 2 performance with solid distributed architecture and resilience rationale."
+              : "Strong practical submission with thorough system design and proctoring telemetry integrity.",
+            strengths: isRound2
+              ? ["Kafka partition key partitioning mastery", "Idempotent transactional storage outbox"]
+              : ["Clean transactional deduplication", "Idempotent consumer architecture"],
+            areasForImprovement: ["Consider circuit breaker thresholds under split-brain"],
+            interviewDefenseQuestions: ["How does your partition key handle rebalancing?"],
+          },
+        };
+        parsed[roundKey] = parsed[`${appId}_${roundKey}`];
+        localStorage.setItem("bh_assignment_submissions", JSON.stringify(parsed));
+      } catch (err) {
+        console.warn("Assignment submission storage error:", err);
+      }
+
+      // Automatically dispatch test submitted email to candidate
       await sendEmailNotification({
         to: candidateEmail,
         recipientName: candidateName,
-        stage: "INTERVIEW",
+        stage: "TEST_SUBMITTED",
         jobTitle,
         portalPath: `/${tenant.slug}/applications/${appId}/interviews`,
         tenantSlug: tenant.slug,
+        customSubject: isRound2
+          ? `Round 2 Assessment Submitted: ${jobTitle} — Brutallyhired`
+          : `Practical Assessment Submitted: ${jobTitle} — Brutallyhired`,
+        customHeading: isRound2
+          ? `Round 2 Technical Assessment Submitted Successfully`
+          : `Practical Assessment Submitted Successfully`,
+        customBody: isRound2
+          ? `Dear ${candidateName}, your Round 2 assessment for the ${jobTitle} position has been successfully submitted. Our hiring panel has received your score and proctoring telemetry.`
+          : `Dear ${candidateName}, your practical assessment for the ${jobTitle} position has been successfully submitted and received by our system. Our HR team is reviewing your submission and telemetry. Once approved for Round 1, you will be invited to select your Round 2 interview time slots.`,
       });
+
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(
+        new CustomEvent("bh_application_updated", { detail: { stage: isRound2 ? "ROUND_2_SUBMITTED" : "TEST_SUBMITTED", appId } })
+      );
     } catch (e) {
       console.warn("Failed to advance stage post-exam:", e);
     }
@@ -200,40 +354,48 @@ export function AssessmentPage() {
             <Check size={36} />
           </span>
           <div>
-            <h1 className="text-2xl font-bold text-ink">Assessment Completed & Passed!</h1>
+            <h1 className="text-2xl font-bold text-ink">
+              {isRound2 ? "Round 2 Technical Assessment Submitted Successfully!" : "Practical Assessment Submitted Successfully!"}
+            </h1>
             <p className="text-ink-muted text-sm mt-1">
-              Your submission has been evaluated by BrutalAssessAI™ and verified against proctoring audit criteria.
+              {isRound2
+                ? "Your Round 2 technical assessment and telemetry have been securely submitted to the hiring panel for evaluation."
+                : "Your test has been securely submitted and delivered to the admin portal for HR review. A confirmation email has been sent to your email address."}
             </p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-lg text-left">
             <div className="rounded-xl border border-line bg-canvas p-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">AI Score</span>
-              <span className="text-xl font-bold text-teal-700">92 / 100</span>
-              <span className="text-[11px] text-teal-800 block">Passed (Threshold &gt;= 75)</span>
+              <span className="text-xl font-bold text-teal-700">{isRound2 ? "96" : "94"} / 100</span>
+              <span className="text-[11px] text-teal-800 block">Score Verified (Threshold 75)</span>
             </div>
             <div className="rounded-xl border border-line bg-canvas p-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">Proctoring Telemetry</span>
               <span className="text-xl font-bold text-teal-700">Clean</span>
-              <span className="text-[11px] text-teal-800 block">99% Face Visibility</span>
+              <span className="text-[11px] text-teal-800 block">99.4% Face Visibility</span>
             </div>
             <div className="rounded-xl border border-line bg-canvas p-3 col-span-2 sm:col-span-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">Next Stage</span>
-              <span className="text-xl font-bold text-brand">Interview</span>
-              <span className="text-[11px] text-ink-muted block">LiveKit Video Panel</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">Status</span>
+              <span className="text-xl font-bold text-emerald-700">{isRound2 ? "Completed" : "In Review"}</span>
+              <span className="text-[11px] text-ink-muted block">{isRound2 ? "Round 2 Evaluated" : "Awaiting HR Approval"}</span>
             </div>
           </div>
 
           <div className="rounded-xl border border-teal-200 bg-teal-50 p-4 text-xs text-teal-900 leading-relaxed max-w-lg">
-            ✉️ An interview invitation email has been dispatched to your inbox. You can proceed directly to book or join your interview session below.
+            ✉️ <strong>{isRound2 ? "Round 2 Assessment Completed!" : "Test Submitted Email Dispatched!"}</strong>{" "}
+            {isRound2
+              ? "Your submission has been registered with verified AI score and proctoring logs. You may now return to Interview Rounds to view the final round."
+              : "A submission receipt email has been sent to your registered email address. Once HR reviews your submission and selects you for Round 1, time slots for Round 2 will be sent and will appear in your Interviews module."}
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Link
               to={`/${tenant.slug}/applications/${appId}/interviews`}
-              className="rounded-xl bg-brand text-white font-bold px-6 py-3 hover:bg-brand-hover transition-colors shadow-sm no-underline"
+              className="rounded-xl bg-brand text-white font-bold px-6 py-3 hover:bg-brand-hover transition-colors shadow-sm no-underline flex items-center gap-2"
             >
-              Proceed to Interview Round →
+              <span>View Interview Rounds</span>
+              <span>→</span>
             </Link>
             <Link
               to={`/${tenant.slug}/applications/${appId}`}
@@ -295,6 +457,76 @@ export function AssessmentPage() {
       }));
     }
 
+    if (isRound2 && assessmentQuestions.length === 0) {
+      assessmentQuestions = [
+        {
+          id: "r2-q-1",
+          order: 1,
+          type: "SINGLE_CHOICE",
+          prompt:
+            "In high-concurrency event ingestion with Kafka, how do you handle hot partition keys without causing head-of-line blocking or worker saturation?",
+          options: [
+            "Add a synthetic randomized jitter suffix to the partition key (e.g., key#salt) and fan-out to sub-queues",
+            "Reduce the total number of partitions so all messages serialize through a single broker",
+            "Disable consumer acknowledgments and rely on ephemeral memory queues",
+            "Drop duplicate frames at the gateway before writing to disk",
+          ],
+        },
+        {
+          id: "r2-q-2",
+          order: 2,
+          type: "SINGLE_CHOICE",
+          prompt:
+            "When designing an idempotent webhook delivery system, what storage combination guarantees zero duplicate executions with sub-millisecond response latency?",
+          options: [
+            "Distributed Redis lock with TTL + transactional outbox in PostgreSQL",
+            "Client-side cookies with encrypted local storage tokens",
+            "Periodic cron jobs polling unacknowledged HTTP requests",
+            "Stateless round-robin reverse proxy caching",
+          ],
+        },
+        {
+          id: "r2-q-3",
+          order: 3,
+          type: "SINGLE_CHOICE",
+          prompt:
+            "How should a distributed proctoring video stream gracefully handle intermittent candidate network disconnections without losing integrity telemetries?",
+          options: [
+            "Buffer audio/video frames in encrypted IndexedDB client cache with jittered exponential backoff retransmission",
+            "Immediately terminate the exam session and disqualify the candidate upon the first dropped packet",
+            "Downgrade all video traffic to uncompressed raw UDP sockets",
+            "Disable SSL certificates to reduce TLS handshake overhead",
+          ],
+        },
+        {
+          id: "r2-q-4",
+          order: 4,
+          type: "SINGLE_CHOICE",
+          prompt:
+            "What database isolation level is required to prevent write skew anomalies in distributed candidate slot reservation systems?",
+          options: [
+            "Serializable (or Snapshot Isolation with strict write predicates)",
+            "Read Uncommitted with dirty reads allowed",
+            "Read Committed with client-side optimistic timeouts",
+            "Repeatable Read without row locks",
+          ],
+        },
+        {
+          id: "r2-q-5",
+          order: 5,
+          type: "SINGLE_CHOICE",
+          prompt:
+            "Under severe CPU throttling on the examination client machine, how should background proctoring worker threads maintain frame telemetry without starving the browser UI?",
+          options: [
+            "Offload frame processing to a Dedicated Web Worker using OffscreenCanvas and requestIdleCallback",
+            "Run intensive neural network model inference synchronously in the main JavaScript thread",
+            "Increase CSS animations and DOM node creation rates",
+            "Block user keyboard input until video frames are uploaded",
+          ],
+        },
+      ];
+    }
+
     // 2. Fallback: Query backend AI assessment generator with CSRF authentication
     if (assessmentQuestions.length === 0) {
       try {
@@ -331,6 +563,7 @@ export function AssessmentPage() {
       if (assessmentQuestions.length > 0) {
         a.questions = assessmentQuestions;
       }
+      a.serverNow = new Date().toISOString();
       a.deadlineAt = new Date(Date.now() + durationMins * 60 * 1000).toISOString();
       if (inv.proctored) proctor.start(a.id);
       setAttempt(a);

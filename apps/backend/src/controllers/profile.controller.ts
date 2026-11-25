@@ -9,10 +9,36 @@ const toDto = (p: Awaited<ReturnType<typeof prisma.candidateProfile.findUnique>>
     : null;
 
 export const getProfile = ah(async (req, res) => {
-  const profile = await prisma.candidateProfile.findUnique({
-    where: { userId_tenantId: { userId: userOf(req).id, tenantId: tenantOf(req).id } },
+  const user = userOf(req);
+  const tenant = tenantOf(req);
+  const [profile, latestAppWithResume] = await Promise.all([
+    prisma.candidateProfile.findUnique({
+      where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } },
+    }),
+    prisma.application.findFirst({
+      where: { userId: user.id, tenantId: tenant.id, resumeFileId: { not: null } },
+      orderBy: { updatedAt: "desc" },
+      select: { resumeFileId: true },
+    }),
+  ]);
+  const latestFile = latestAppWithResume?.resumeFileId
+    ? await prisma.fileObject.findUnique({ where: { id: latestAppWithResume.resumeFileId } })
+    : null;
+  res.json({
+    profile: toDto(profile),
+    email: user.email,
+    displayName: user.displayName,
+    latestResume: latestFile
+      ? {
+          id: latestFile.id,
+          name: latestFile.originalName,
+          sizeBytes: latestFile.sizeBytes,
+          mimeType: latestFile.mimeType,
+          createdAt: latestFile.createdAt.toISOString(),
+          url: `/api/files/${latestFile.id}`,
+        }
+      : null,
   });
-  res.json({ profile: toDto(profile), email: userOf(req).email, displayName: userOf(req).displayName });
 });
 
 export const saveProfile = ah(async (req, res) => {

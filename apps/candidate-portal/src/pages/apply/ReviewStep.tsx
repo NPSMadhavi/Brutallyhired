@@ -112,6 +112,7 @@ export function ReviewStep() {
               hardScore: 48,
               preferredScore: 37,
               resumeName: draft.resume?.name || "Candidate_Resume.pdf",
+              resumeUrl: draft.resume?.id ? `/api/files/${draft.resume.id}` : undefined,
               resumeDataUrl: (() => {
                 const local = localStorage.getItem(`bh_draft_${draft.id}`);
                 if (local) {
@@ -124,6 +125,18 @@ export function ReviewStep() {
             };
             const updated = [newAppItem, ...existing.filter((e) => e.id !== newAppItem.id)];
             localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+
+            if (newAppItem.resumeName && newAppItem.resumeDataUrl) {
+              localStorage.setItem(
+                "bh_last_uploaded_resume",
+                JSON.stringify({
+                  email: newAppItem.email,
+                  filename: newAppItem.resumeName,
+                  url: newAppItem.resumeDataUrl,
+                  uploadedAt: "Verified Candidate Attachment (PDF)",
+                })
+              );
+            }
 
             // Mark local draft as submitted
             const local = localStorage.getItem(`bh_draft_${draft.id}`);

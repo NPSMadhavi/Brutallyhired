@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { useRemoveCoverLetter, useSaveResumeSummary, useUpdateDraft, useUploadCoverLetter, useUploadResume } from "@/api/hooks";
+import { useMe, useRemoveCoverLetter, useSaveResumeSummary, useUpdateDraft, useUploadCoverLetter, useUploadResume } from "@/api/hooks";
 import { useTenantCtx } from "@/components/layout/TenantContext";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { CheckRow, Pill } from "@/components/ui/Card";
@@ -135,6 +135,7 @@ export function ResumeStep() {
   const tenant = useTenantCtx();
   const f = useFormat();
   const navigate = useNavigate();
+  const me = useMe();
   const { draft, nextPath, pathFor } = useApply();
   const upload = useUploadResume(tenant.slug, draft.id);
   const [editing, setEditing] = useState(false);
@@ -209,6 +210,17 @@ export function ResumeStep() {
                           cur.resumeDataUrl = reader.result;
                           localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(cur));
                         } catch { }
+                        try {
+                          localStorage.setItem(
+                            "bh_last_uploaded_resume",
+                            JSON.stringify({
+                              email: me.data?.email || undefined,
+                              filename: file.name,
+                              url: reader.result,
+                              uploadedAt: "Verified Candidate Attachment (PDF)",
+                            })
+                          );
+                        } catch { }
                       };
                       reader.readAsDataURL(file);
                       localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
@@ -252,6 +264,17 @@ export function ResumeStep() {
                       const cur = JSON.parse(localStorage.getItem(`bh_draft_${draft.id}`) || "{}");
                       cur.resumeDataUrl = reader.result;
                       localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(cur));
+                    } catch { }
+                    try {
+                      localStorage.setItem(
+                        "bh_last_uploaded_resume",
+                        JSON.stringify({
+                          email: me.data?.email || undefined,
+                          filename: file.name,
+                          url: reader.result,
+                          uploadedAt: "Verified Candidate Attachment (PDF)",
+                        })
+                      );
                     } catch { }
                   };
                   reader.readAsDataURL(file);

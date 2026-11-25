@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { useMe, useOverview, useProfile, useWithdraw } from "@/api/hooks";
-import { NextStepCard } from "@/components/journey/NextStep";
 import { JourneyTrack } from "@/components/journey/JourneyTrack";
 import { Updates } from "@/components/journey/Updates";
 import { useTenantCtx } from "@/components/layout/TenantContext";
@@ -14,35 +13,57 @@ import { Avatar } from "@/components/ui/misc";
 import { useFormat } from "@/lib/format";
 import { stageTone } from "./stageTone";
 
-function buildCandidateJourneyTrack(stage: string, submittedAt?: string | null) {
+function buildCandidateJourneyTrack(
+  stage: string,
+  submittedAt?: string | null,
+  opts?: { screeningTestSent?: boolean; screeningTestSubmitted?: boolean }
+) {
   const normStage = (stage || "SUBMITTED").toUpperCase();
+  const hasScreeningActivity = Boolean(opts?.screeningTestSent || opts?.screeningTestSubmitted);
 
-  const isInReviewDone = [
-    "SCREENING_TEST",
-    "ASSESSMENT",
-    "SHORTLISTED",
-    "INTERVIEW",
-    "INTERVIEW_SCHEDULE",
-    "INTERVIEW_SCHEDULED",
-    "OFFER",
-    "SELECTED",
-    "ONBOARDING",
-    "HIRED",
-  ].includes(normStage);
+  const isInReviewDone =
+    [
+      "SCREENING_TEST",
+      "ASSESSMENT",
+      "TEST_SUBMITTED",
+      "ASSESSMENT_SUBMITTED",
+      "ROUND_1_PASSED",
+      "SHORTLISTED",
+      "INTERVIEW",
+      "INTERVIEW_SCHEDULE",
+      "INTERVIEW_SCHEDULED",
+      "OFFER",
+      "SELECTED",
+      "ONBOARDING",
+      "HIRED",
+    ].includes(normStage) ||
+    ((normStage === "IN_REVIEW" || normStage === "UNDER_REVIEW") && hasScreeningActivity);
+
   const isInReviewCurrent =
-    normStage === "SUBMITTED" || normStage === "IN_REVIEW" || normStage === "UNDER_REVIEW";
+    (normStage === "IN_REVIEW" || normStage === "UNDER_REVIEW") && !hasScreeningActivity;
 
-  const isScreeningDone = [
-    "SHORTLISTED",
-    "INTERVIEW",
-    "INTERVIEW_SCHEDULE",
-    "INTERVIEW_SCHEDULED",
-    "OFFER",
-    "SELECTED",
-    "ONBOARDING",
-    "HIRED",
-  ].includes(normStage);
-  const isScreeningCurrent = normStage === "SCREENING_TEST" || normStage === "ASSESSMENT";
+  const isScreeningDone =
+    [
+      "SHORTLISTED",
+      "ROUND_1_PASSED",
+      "INTERVIEW",
+      "INTERVIEW_SCHEDULE",
+      "INTERVIEW_SCHEDULED",
+      "OFFER",
+      "SELECTED",
+      "ONBOARDING",
+      "HIRED",
+    ].includes(normStage) ||
+    ((normStage === "IN_REVIEW" || normStage === "UNDER_REVIEW") && Boolean(opts?.screeningTestSubmitted));
+
+  const isScreeningCurrent =
+    normStage === "SCREENING_TEST" ||
+    normStage === "ASSESSMENT" ||
+    normStage === "TEST_SUBMITTED" ||
+    normStage === "ASSESSMENT_SUBMITTED" ||
+    ((normStage === "IN_REVIEW" || normStage === "UNDER_REVIEW") &&
+      Boolean(opts?.screeningTestSent) &&
+      !opts?.screeningTestSubmitted);
 
   const isShortlistedDone = [
     "INTERVIEW",
@@ -72,7 +93,7 @@ function buildCandidateJourneyTrack(stage: string, submittedAt?: string | null) 
     {
       key: "APPLIED",
       label: "Applied",
-      state: (isInReviewDone || isInReviewCurrent ? "done" : "current") as "done" | "current" | "upcoming",
+      state: (normStage === "DRAFT" ? "current" : "done") as "done" | "current" | "upcoming",
       at: submittedAt || null,
     },
     {
@@ -132,6 +153,14 @@ export function OverviewPage() {
   const [confirming, setConfirming] = useState(false);
   const [version, setVersion] = useState(0);
 
+  const [selectedR1SlotId, setSelectedR1SlotId] = useState<string>("");
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTs(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   useEffect(() => {
     const onUpdate = () => setVersion((v) => v + 1);
     window.addEventListener("storage", onUpdate);
@@ -145,18 +174,37 @@ export function OverviewPage() {
   const localDraft = localStorage.getItem(`bh_draft_${appId}`);
   const localApps = localStorage.getItem("bh_admin_applications");
   let matchingApp: any = null;
-  if (localApps) {
+  let adminListPresent = false;
+  const userEmail = me.data?.email?.toLowerCase();
+  if (localApps !== null) {
     try {
       const parsed = JSON.parse(localApps);
       if (Array.isArray(parsed)) {
+        adminListPresent = true;
         matchingApp = parsed.find(
           (a: any) =>
             a.id === appId ||
             a.reference === appId ||
             a.externalRef === appId ||
-            (a.email && me.data?.email && a.email.toLowerCase() === me.data.email.toLowerCase()) ||
-            (a.email && a.email.toLowerCase() === "netopsysai@gmail.com") ||
-            (a.candidateName && me.data?.displayName && a.candidateName.toLowerCase() === me.data.displayName.toLowerCase())
+            (userEmail && a.email?.toLowerCase() === userEmail && q.data?.job?.title && a.jobTitle === q.data.job.title)
+        );
+      }
+    } catch {}
+  }
+
+  let rejectedMatch: any = null;
+  const rejectedRaw = localStorage.getItem("bh_rejected_applications");
+  if (rejectedRaw) {
+    try {
+      const parsed = JSON.parse(rejectedRaw);
+      if (Array.isArray(parsed)) {
+        rejectedMatch = parsed.find(
+          (r: any) =>
+            r.id === appId ||
+            (!matchingApp &&
+              userEmail &&
+              r.email?.toLowerCase() === userEmail &&
+              (!q.data?.job?.title || !r.jobTitle || r.jobTitle === q.data.job.title))
         );
       }
     } catch {}
@@ -169,7 +217,7 @@ export function OverviewPage() {
     } catch {}
   }
 
-  let o = q.data;
+  let o = q.data ? { ...q.data } : undefined;
 
   // Determine stage by taking the most advanced stage between API data and local admin storage
   const stagePriority: Record<string, number> = {
@@ -192,9 +240,23 @@ export function OverviewPage() {
     WITHDRAWN: 99,
   };
 
-  const localStage = matchingApp?.stage || draftParsed.stage || null;
-  let effectiveStage = o?.stage || localStage || "SUBMITTED";
-  if (localStage && stagePriority[localStage] !== undefined) {
+  const deletedFromAdmin =
+    adminListPresent &&
+    !matchingApp &&
+    (o?.stage || draftParsed.stage) &&
+    (o?.stage || draftParsed.stage) !== "DRAFT";
+
+  const localStage =
+    rejectedMatch || deletedFromAdmin
+      ? "REJECTED"
+      : (matchingApp?.stage || draftParsed.stage || null);
+  let effectiveStage: string = o?.stage || "SUBMITTED";
+  if (rejectedMatch || deletedFromAdmin) {
+    effectiveStage = "REJECTED";
+  } else if (matchingApp?.stage) {
+    // Admin stage in bh_admin_applications is authoritative (supports forward and backward changes)
+    effectiveStage = matchingApp.stage;
+  } else if (localStage && stagePriority[localStage] !== undefined) {
     const apiPriority = stagePriority[o?.stage || "SUBMITTED"] || 1;
     const locPriority = stagePriority[localStage] || 1;
     if (locPriority > apiPriority) {
@@ -203,20 +265,23 @@ export function OverviewPage() {
   }
 
   if (!o) {
-    if (localDraft || matchingApp) {
+    if (localDraft || matchingApp || rejectedMatch) {
       o = {
         id: appId,
         reference: matchingApp?.reference || draftParsed.reference || `APP-${appId.slice(-6)}`,
         stage: effectiveStage,
         closed: effectiveStage === "REJECTED" || effectiveStage === "NOT_SELECTED" || effectiveStage === "WITHDRAWN",
-        job: draftParsed.job || { title: matchingApp?.jobTitle || "Software Developer", location: "Hybrid / Flexible" },
-        submittedAt: matchingApp?.submittedAt || draftParsed.submittedAt || new Date().toISOString(),
+        job: draftParsed.job || { title: matchingApp?.jobTitle || rejectedMatch?.jobTitle || "Software Developer", location: "Hybrid / Flexible" },
+        submittedAt: matchingApp?.submittedAt || draftParsed.submittedAt || rejectedMatch?.rejectedAt || new Date().toISOString(),
         events: [
           {
             id: `ev-${appId}-sub`,
             type: "application_submitted",
             createdAt: draftParsed.submittedAt || new Date().toISOString(),
-            data: { jobTitle: matchingApp?.jobTitle || "Software Developer" },
+            data: {
+              reference: matchingApp?.reference || draftParsed.reference || `APP-${appId.slice(-6)}`,
+              jobTitle: matchingApp?.jobTitle || rejectedMatch?.jobTitle || "Software Developer",
+            },
           },
         ],
         track: buildCandidateJourneyTrack(effectiveStage, draftParsed.submittedAt || matchingApp?.submittedAt),
@@ -225,15 +290,92 @@ export function OverviewPage() {
     }
   }
 
-  // If application exists, synchronize its stage and computed nextAction
+  // If application exists, synchronize its stage, events, and computed nextAction
   if (o) {
     o.stage = effectiveStage as any;
-    o.track = buildCandidateJourneyTrack(effectiveStage, o.submittedAt) as any;
+    o.closed = effectiveStage === "REJECTED" || effectiveStage === "NOT_SELECTED" || effectiveStage === "WITHDRAWN" ? true : o.closed;
+    o.track = buildCandidateJourneyTrack(effectiveStage, o.submittedAt, {
+      screeningTestSent: matchingApp?.screeningTestSent,
+      screeningTestSubmitted: matchingApp?.screeningTestSubmitted,
+    }) as any;
+
+    const stageEventMap: Record<string, { type: string; data: Record<string, string> }> = {
+      IN_REVIEW: { type: "review_started", data: {} },
+      UNDER_REVIEW: { type: "review_started", data: {} },
+      ASSESSMENT: {
+        type: "assessment_invited",
+        data: {
+          title: "Round 1 Technical Assessment",
+          dueAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+        },
+      },
+      SCREENING_TEST: {
+        type: "screening_invited",
+        data: {},
+      },
+      SHORTLISTED: { type: "shortlisted", data: {} },
+      INTERVIEW: { type: "interview_invited", data: { title: o.job?.title || "Technical Interview" } },
+      INTERVIEW_SCHEDULE: { type: "interview_invited", data: { title: o.job?.title || "Technical Interview" } },
+      INTERVIEW_SCHEDULED: { type: "interview_invited", data: { title: o.job?.title || "Technical Interview" } },
+      OFFER: { type: "offer_sent", data: { respondBy: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString() } },
+      ONBOARDING: { type: "onboarding_started", data: {} },
+      HIRED: { type: "hired", data: {} },
+      ON_HOLD: { type: "on_hold", data: {} },
+      REJECTED: { type: "application_rejected", data: {} },
+      NOT_SELECTED: { type: "application_closed", data: {} },
+    };
+
+    const existingEvents = Array.isArray(o.events) ? [...o.events] : [];
+    const recordedEvents: any[] = [];
+    try {
+      const rawEv = localStorage.getItem("bh_application_events");
+      if (rawEv) {
+        const parsedEv = JSON.parse(rawEv);
+        if (Array.isArray(parsedEv)) {
+          for (const item of parsedEv) {
+            const matchesApp =
+              item.appId === appId ||
+              item.appId === o.id ||
+              (userEmail && item.email?.toLowerCase() === userEmail && (!item.jobTitle || item.jobTitle === o.job?.title));
+            if (matchesApp && item.event && !existingEvents.some((e) => e.id === item.event.id)) {
+              recordedEvents.push(item.event);
+            }
+          }
+        }
+      }
+    } catch {}
+
+    let mergedEvents = [...recordedEvents, ...existingEvents];
+    const mapped = stageEventMap[(effectiveStage || "").toUpperCase()];
+    if (mapped && !mergedEvents.some((e) => e.type === mapped.type)) {
+      mergedEvents = [
+        {
+          id: `ev-stage-${effectiveStage}-${o.id}`,
+          type: mapped.type as any,
+          createdAt: new Date().toISOString(),
+          data: mapped.data,
+        },
+        ...mergedEvents,
+      ];
+    }
+    o.events = mergedEvents;
     o.nextAction = (
       effectiveStage === "WITHDRAWN"
         ? { type: "CLOSED", reason: "WITHDRAWN" }
-        : effectiveStage === "REJECTED" || effectiveStage === "NOT_SELECTED"
+        : effectiveStage === "REJECTED"
+        ? { type: "CLOSED", reason: "REJECTED" }
+        : effectiveStage === "NOT_SELECTED"
         ? { type: "CLOSED", reason: "NOT_SELECTED" }
+        : effectiveStage === "IN_REVIEW" && matchingApp?.screeningTestSent && !matchingApp?.screeningTestSubmitted
+        ? {
+            type: "SCREENING_TEST",
+            path: `/${tenant.slug}/applications/${appId}/screening`,
+          }
+        : effectiveStage === "IN_REVIEW" && matchingApp?.screeningTestSubmitted
+        ? {
+            type: "AWAIT_DECISION",
+            title: "Screening Test Submitted",
+          }
         : effectiveStage === "SCREENING_TEST" || effectiveStage === "ASSESSMENT"
         ? {
             type: "TAKE_ASSESSMENT",
@@ -346,8 +488,221 @@ export function OverviewPage() {
           </div>
           <Pill tone={stageTone(o.stage)} dot className="px-3 py-1.5 text-[13px]">{t(`stage.${o.stage}`)}</Pill>
         </div>
-        {!o.closed && <JourneyTrack track={buildCandidateJourneyTrack(o.stage, o.submittedAt)} />}
-        <NextStepCard action={o.nextAction} base={base} draftPath={o.stage === "DRAFT" ? `${base}/apply/details` : null} />
+        {!o.closed && (
+          <JourneyTrack
+            track={buildCandidateJourneyTrack(o.stage, o.submittedAt, {
+              screeningTestSent: matchingApp?.screeningTestSent,
+              screeningTestSubmitted: matchingApp?.screeningTestSubmitted,
+            })}
+          />
+        )}
+
+        {o.closed && (
+          <div className="rounded-2xl border border-line bg-canvas p-5 space-y-1">
+            <h3 className="text-base font-bold text-ink">
+              {(o.stage as string) === "REJECTED"
+                ? "Application rejected"
+                : o.stage === "WITHDRAWN"
+                ? "You withdrew this application"
+                : "This application is closed"}
+            </h3>
+            <p className="text-xs text-ink-muted">
+              {(o.stage as string) === "REJECTED"
+                ? "Thank you for applying. Unfortunately, your application was not selected to move forward."
+                : "This application is closed. Thank you for your interest."}
+            </p>
+          </div>
+        )}
+
+        {!o.closed && o.stage === "IN_REVIEW" && matchingApp?.screeningTestSent && !matchingApp?.screeningTestSubmitted && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/40 p-5">
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-ink">Screening Test Ready</h3>
+              <p className="text-xs text-ink-muted">
+                Complete your screening test questions configured by the hiring team.
+              </p>
+            </div>
+            <ButtonAnchor href={`/${tenant.slug}/applications/${appId}/screening`} variant="primary">
+              Start Screening Test →
+            </ButtonAnchor>
+          </div>
+        )}
+
+        {!o.closed && o.stage === "OFFER" && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/40 p-5">
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-ink">Formal Job Offer Ready</h3>
+              <p className="text-xs text-ink-muted">Review your formal employment offer letter and sign.</p>
+            </div>
+            <ButtonAnchor href={`/${tenant.slug}/applications/${appId}/offer`} variant="primary">
+              Review Formal Job Offer & Sign →
+            </ButtonAnchor>
+          </div>
+        )}
+
+        {!o.closed && (o.stage === "ONBOARDING" || o.stage === "HIRED") && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/40 p-5">
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-ink">Onboarding Checklist</h3>
+              <p className="text-xs text-ink-muted">Complete your onboarding documents and joining details.</p>
+            </div>
+            <ButtonAnchor href={`/${tenant.slug}/applications/${appId}/onboarding`} variant="primary">
+              Open Onboarding →
+            </ButtonAnchor>
+          </div>
+        )}
+
+        {/* Round 1 Slot Selection & 10-minute Assessment Unlock when Shortlisted / Interview Scheduled */}
+        {!o.closed && ((o.stage as string) === "SHORTLISTED" || (o.stage as string) === "INTERVIEW_SCHEDULED") && matchingApp?.round1SlotsSent && Array.isArray(matchingApp?.round1Slots) && matchingApp.round1Slots.length > 0 && (
+          <div className="rounded-2xl border border-teal-200 bg-teal-50/40 p-5 space-y-4">
+            {!matchingApp.round1BookedSlot ? (
+              <>
+                <div>
+                  <h3 className="text-base font-bold text-ink">Select Your Round 1 Assessment Time Slot</h3>
+                  <p className="text-xs text-ink-muted mt-0.5">
+                    Choose an available date and time below. Your Round 1 assessment button will enable 10 minutes before your scheduled slot.
+                  </p>
+                </div>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {matchingApp.round1Slots.map((slot: { id: string; label: string; isoStart: string }) => {
+                    const isPicked = selectedR1SlotId === slot.id;
+                    return (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        onClick={() => setSelectedR1SlotId(slot.id)}
+                        className={`rounded-xl border px-3.5 py-2.5 text-left text-xs font-semibold transition-all cursor-pointer ${
+                          isPicked
+                            ? "border-brand bg-brand/10 text-brand ring-2 ring-brand/20"
+                            : "border-line bg-white text-ink hover:bg-canvas"
+                        }`}
+                      >
+                        {slot.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    disabled={!selectedR1SlotId}
+                    onClick={() => {
+                      const chosen = matchingApp.round1Slots.find((s: any) => s.id === selectedR1SlotId);
+                      if (!chosen) return;
+                      try {
+                        const rawApps = localStorage.getItem("bh_admin_applications");
+                        if (rawApps) {
+                          const apps = JSON.parse(rawApps);
+                          const updated = apps.map((a: any) =>
+                            a.id === matchingApp.id
+                              ? { ...a, stage: "INTERVIEW_SCHEDULED", round1BookedSlot: chosen }
+                              : a
+                          );
+                          localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+                        }
+
+                        // Mark slot as BOOKED in bh_interview_slots_all
+                        const rawAllSlots = localStorage.getItem("bh_interview_slots_all");
+                        if (rawAllSlots) {
+                          const allSlots = JSON.parse(rawAllSlots);
+                          if (Array.isArray(allSlots)) {
+                            const nextSlots = allSlots.map((s: any) =>
+                              s.id === chosen.id
+                                ? {
+                                    ...s,
+                                    status: "BOOKED",
+                                    bookedCandidateId: matchingApp.id,
+                                    bookedCandidateName: matchingApp.candidateName || "Candidate",
+                                    bookedCandidateEmail: matchingApp.email || me.data?.email,
+                                  }
+                                : s
+                            );
+                            localStorage.setItem("bh_interview_slots_all", JSON.stringify(nextSlots));
+                          }
+                        }
+
+                        // Add to bh_admin_interviews for Dashboard Upcoming Interviews
+                        const rawInts = localStorage.getItem("bh_admin_interviews");
+                        const ints = rawInts ? JSON.parse(rawInts) : [];
+                        if (Array.isArray(ints)) {
+                          const nextInts = [
+                            {
+                              id: `int-r1-${matchingApp.id}`,
+                              roundName: "Round 1: Technical & Architecture Assessment",
+                              candidateName: matchingApp.candidateName || me.data?.displayName || "Candidate",
+                              jobTitle: o.job?.title || matchingApp.jobTitle || "Role",
+                              scheduledAt: chosen.label,
+                              interviewerName: "HR & Assessment Panel",
+                            },
+                            ...ints.filter((i: any) => i.id !== `int-r1-${matchingApp.id}`),
+                          ];
+                          localStorage.setItem("bh_admin_interviews", JSON.stringify(nextInts));
+                        }
+
+                        const rawEv = localStorage.getItem("bh_application_events");
+                        const list = rawEv ? JSON.parse(rawEv) : [];
+                        localStorage.setItem(
+                          "bh_application_events",
+                          JSON.stringify([
+                            {
+                              appId: matchingApp.id,
+                              email: me.data?.email,
+                              jobTitle: o.job?.title,
+                              event: {
+                                id: `ev-r1-slot-${matchingApp.id}-${Date.now()}`,
+                                type: "round1_slot_booked",
+                                createdAt: new Date().toISOString(),
+                                data: { when: chosen.label },
+                              },
+                            },
+                            ...(Array.isArray(list) ? list : []),
+                          ])
+                        );
+                      } catch {}
+                      window.dispatchEvent(new Event("storage"));
+                      window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId: matchingApp.id, stage: "INTERVIEW_SCHEDULED" } }));
+                    }}
+                  >
+                    Confirm Round 1 Slot →
+                  </Button>
+                </div>
+              </>
+            ) : (
+              (() => {
+                const booked = matchingApp.round1BookedSlot as { id: string; label: string; isoStart: string };
+                const startMs = new Date(booked.isoStart).getTime();
+                const unlockMs = Number.isFinite(startMs) ? startMs - 10 * 60 * 1000 : 0;
+                const isUnlocked = Boolean(matchingApp.round1Assigned) || (Number.isFinite(startMs) && nowTs >= unlockMs);
+
+                return (
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-100 text-teal-800 px-2.5 py-0.5 text-[11px] font-bold">
+                        <Check size={12} /> Round 1 Slot Confirmed
+                      </span>
+                      <h3 className="text-base font-bold text-ink">{booked.label}</h3>
+                      <p className="text-xs text-ink-muted">
+                        {isUnlocked
+                          ? "Your Round 1 assessment is now enabled and ready."
+                          : "Start Round 1 Assessment button will enable 10 minutes before your scheduled slot."}
+                      </p>
+                    </div>
+                    {isUnlocked ? (
+                      <ButtonAnchor href={`/${tenant.slug}/applications/${appId}/assessments/invite-${appId}`} variant="primary">
+                        Start Round 1 Assessment →
+                      </ButtonAnchor>
+                    ) : (
+                      <Button type="button" variant="primary" disabled>
+                        Start Round 1 Assessment →
+                      </Button>
+                    )}
+                  </div>
+                );
+              })()
+            )}
+          </div>
+        )}
       </section>
 
       <div className="flex flex-wrap items-start gap-6">

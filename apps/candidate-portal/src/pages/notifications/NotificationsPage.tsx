@@ -1,7 +1,8 @@
 import { clsx } from "clsx";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { useMarkAllRead, useMarkRead, useNotifications } from "@/api/hooks";
+import { useMarkAllRead, useMarkRead, useMe, useNotifications } from "@/api/hooks";
 import { useEventText } from "@/components/journey/eventText";
 import { useTenantCtx } from "@/components/layout/TenantContext";
 import { Button } from "@/components/ui/Button";
@@ -15,19 +16,110 @@ export function NotificationsPage() {
   const f = useFormat();
   const text = useEventText();
   const navigate = useNavigate();
+  const me = useMe();
   const q = useNotifications(tenant.slug);
   const markRead = useMarkRead(tenant.slug);
   const markAll = useMarkAllRead(tenant.slug);
+  const [, setVersion] = useState(0);
+
+  useEffect(() => {
+    const onUpdate = () => setVersion((v) => v + 1);
+    window.addEventListener("storage", onUpdate);
+    window.addEventListener("bh_application_updated", onUpdate);
+    return () => {
+      window.removeEventListener("storage", onUpdate);
+      window.removeEventListener("bh_application_updated", onUpdate);
+    };
+  }, []);
+
   if (q.isPending) return <PageLoader />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
-  const items = q.data.pages.flatMap((p) => p.items);
-  const unread = q.data.pages[0]?.unread ?? 0;
+
+  const apiItems = q.data.pages.flatMap((p) => p.items);
+  const userEmail = me.data?.email?.toLowerCase();
+
+  let readIds: string[] = [];
+  try {
+    const rawRead = localStorage.getItem("bh_read_notifications");
+    if (rawRead) {
+      const parsed = JSON.parse(rawRead);
+      if (Array.isArray(parsed)) readIds = parsed;
+    }
+  } catch {}
+  const readSet = new Set(readIds);
+
+  const localItems: Array<{
+    id: string;
+    type: any;
+    data: any;
+    createdAt: string;
+    readAt: string | null;
+    applicationId: string | null;
+    isLocal: boolean;
+  }> = [];
+
+  try {
+    const rawEv = localStorage.getItem("bh_application_events");
+    if (rawEv) {
+      const parsedEv = JSON.parse(rawEv);
+      if (Array.isArray(parsedEv)) {
+        for (const item of parsedEv) {
+          const belongs = !userEmail || !item.email || item.email.toLowerCase() === userEmail;
+          if (belongs && item.event && !apiItems.some((a) => a.id === item.event.id)) {
+            localItems.push({
+              id: item.event.id,
+              type: item.event.type,
+              data: item.event.data || {},
+              createdAt: item.event.createdAt || new Date().toISOString(),
+              readAt: readSet.has(item.event.id) ? item.event.createdAt : null,
+              applicationId: item.appId || null,
+              isLocal: true,
+            });
+          }
+        }
+      }
+    }
+  } catch {}
+
+  const items = [
+    ...localItems,
+    ...apiItems.map((a) => ({ ...a, isLocal: false })),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const unread = (q.data.pages[0]?.unread ?? 0) + localItems.filter((i) => !i.readAt).length;
+
+  const markLocalRead = (id: string) => {
+    try {
+      const next = Array.from(new Set([...readIds, id]));
+      localStorage.setItem("bh_read_notifications", JSON.stringify(next));
+      window.dispatchEvent(new Event("storage"));
+    } catch {}
+  };
+
+  const markAllLocalRead = () => {
+    try {
+      const next = Array.from(new Set([...readIds, ...localItems.map((i) => i.id)]));
+      localStorage.setItem("bh_read_notifications", JSON.stringify(next));
+      window.dispatchEvent(new Event("storage"));
+    } catch {}
+  };
 
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-[32px]">{t("notifications.title")}</h1>
-        {unread > 0 && <Button variant="text" loading={markAll.isPending} onClick={() => markAll.mutate()}>{t("notifications.markAll")}</Button>}
+        {unread > 0 && (
+          <Button
+            variant="text"
+            loading={markAll.isPending}
+            onClick={() => {
+              markAllLocalRead();
+              markAll.mutate();
+            }}
+          >
+            {t("notifications.markAll")}
+          </Button>
+        )}
       </div>
       {items.length === 0 ? (
         <EmptyState icon={<Bell size={26} />} title={t("notifications.empty")} />
@@ -41,7 +133,10 @@ export function NotificationsPage() {
                   type="button"
                   className={clsx("flex w-full items-start gap-3.5 px-5 py-4 text-left hover:bg-[#F7F9FC]", !n.readAt && "bg-brand/[0.04]")}
                   onClick={() => {
-                    if (!n.readAt) markRead.mutate(n.id);
+                    if (!n.readAt) {
+                      if (n.isLocal) markLocalRead(n.id);
+                      else markRead.mutate(n.id);
+                    }
                     if (n.applicationId) navigate(`/${tenant.slug}/applications/${n.applicationId}`);
                   }}
                 >

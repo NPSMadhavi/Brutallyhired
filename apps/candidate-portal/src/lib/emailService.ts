@@ -13,7 +13,7 @@ export interface SentEmailRecord {
   heading: string;
   body: string;
   portalUrl: string;
-  stage: "SHORTLISTED" | "ASSESSMENT" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "ON_HOLD";
+  stage: "SHORTLISTED" | "ASSESSMENT" | "TEST_SUBMITTED" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "ON_HOLD";
   sentAt: string;
   status: "DELIVERED" | "QUEUED";
   attachmentName?: string;
@@ -53,7 +53,7 @@ export async function sendEmailNotification({
 }: {
   to: string;
   recipientName: string;
-  stage: "SHORTLISTED" | "ASSESSMENT" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "ON_HOLD";
+  stage: "SHORTLISTED" | "ASSESSMENT" | "TEST_SUBMITTED" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED" | "ON_HOLD";
   jobTitle: string;
   portalPath: string;
   tenantSlug?: string;
@@ -64,7 +64,7 @@ export async function sendEmailNotification({
   roundNumber?: number;
   attachmentName?: string;
 }): Promise<SentEmailRecord> {
-  const fullPortalUrl = `${window.location.origin}${portalPath}`;
+  const fullPortalUrl = portalPath ? `${window.location.origin}${portalPath}` : "";
 
   let subject = customSubject || "";
   let heading = customHeading || "";
@@ -73,6 +73,14 @@ export async function sendEmailNotification({
 
   switch (stage) {
     case "SHORTLISTED":
+      templateKey = "shortlisted";
+      subject = subject || `Shortlisted for ${jobTitle} — Brutallyhired`;
+      heading = heading || `Congratulations!`;
+      body =
+        body ||
+        `Dear ${recipientName},\n\nCongratulations!\n\nWe are pleased to inform you that you have been shortlisted for the ${jobTitle} position at Brutallyhired based on our initial review of your application.\n\nYour profile has been selected to proceed to the next stage of our recruitment process.\n\nOur recruitment team will contact you shortly with the details of your First Round Interview, including the interview date, time, and other relevant instructions.\n\nWe appreciate your interest in joining our organization and look forward to connecting with you.\n\nBest Regards,\nHR Recruitment Team\nBrutallyhired`;
+      break;
+
     case "ASSESSMENT":
       templateKey = "assessment_invited";
       subject = subject || `Assessment ready — ${jobTitle}`;
@@ -80,6 +88,15 @@ export async function sendEmailNotification({
       body =
         body ||
         `We are impressed by your background and are pleased to invite you to the next stage for the ${jobTitle} opening at Brutallyhired. Please complete your proctored assessment before the deadline. It takes 45 minutes once you begin.`;
+      break;
+
+    case "TEST_SUBMITTED":
+      templateKey = "assessment_submitted";
+      subject = subject || `Practical Assessment Submitted — ${jobTitle}`;
+      heading = heading || `Practical Assessment Submitted Successfully`;
+      body =
+        body ||
+        `Thank you ${recipientName}! Your practical assessment for the ${jobTitle} opening at Brutallyhired has been received and submitted for HR review. Our hiring panel is reviewing your answers and telemetry. You will receive an update once your submission is reviewed.`;
       break;
 
     case "INTERVIEW":

@@ -110,7 +110,7 @@ export const sendNotificationEmail = ah(async (req, res) => {
       template: (template || "assessment_invited") as TemplateKey,
       tenant,
       vars: vars || {},
-      path: path || `/${tenant.slug}/applications`,
+      path: path === "" ? undefined : (path || `/${tenant.slug}/applications`),
       subject: customSubject,
       heading: customHeading,
       body: customBody,

@@ -48,9 +48,20 @@ export function AssessmentRunner({
   const [answers, setAnswers] = useState(attempt.answers);
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const offset = useMemo(() => new Date(attempt.serverNow).getTime() - Date.now(), [attempt.serverNow]);
-  const deadline = new Date(attempt.deadlineAt).getTime();
-  const [left, setLeft] = useState(() => deadline - (Date.now() + offset));
+  
+  // Calculate remaining seconds reliably:
+  // attempt.serverNow might be missing or out of sync; compare deadline to Date.now()
+  // Ensure default duration of at least 45 minutes if deadline is invalid or past
+  const [left, setLeft] = useState(() => {
+    try {
+      const now = Date.now();
+      const dl = attempt.deadlineAt ? new Date(attempt.deadlineAt).getTime() : NaN;
+      if (!isNaN(dl) && dl > now) {
+        return Math.max(0, Math.floor((dl - now) / 1000));
+      }
+    } catch {}
+    return 45 * 60; // 45 minutes default in seconds
+  });
   const pending = useRef<Record<string, number[] | string>>({});
   const saveTimer = useRef<number>();
   const finished = useRef(false);
@@ -322,12 +333,17 @@ export function AssessmentRunner({
   useEffect(() => {
     if (isDisqualified) return;
     const id = window.setInterval(() => {
-      const remaining = deadline - (Date.now() + offset);
-      setLeft(remaining);
-      if (remaining <= 0) void finish();
+      setLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(id);
+          void finish();
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => window.clearInterval(id);
-  }, [deadline, offset, finish, isDisqualified]);
+  }, [finish, isDisqualified]);
 
   const set = (qid: string, v: number[] | string) => {
     if (isDisqualified) return;
@@ -413,8 +429,8 @@ export function AssessmentRunner({
   const unanswered = attempt.questions.filter(
     (x) => answers[x.id] === undefined || (Array.isArray(answers[x.id]) ? (answers[x.id] as number[]).length === 0 : answers[x.id] === "")
   ).length;
-  const mm = Math.max(0, Math.floor(left / 60000));
-  const ss = Math.max(0, Math.floor((left % 60000) / 1000));
+  const mm = Math.max(0, Math.floor(left / 60));
+  const ss = Math.max(0, Math.floor(left % 60));
   const value = answers[q.id];
 
   return (

@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useLogout, useMe, useNotifications, useOverview, useProfile } from "@/api/hooks";
 import { Bell, Lock, LogOut, Shield } from "@/components/ui/icons";
 import { Avatar } from "@/components/ui/misc";
@@ -56,7 +57,39 @@ export function PortalLayout() {
   const appMatch = useMatch("/:tenant/applications/:appId/*");
   const appId = appMatch?.params.appId && appMatch.params.appId !== "" ? appMatch.params.appId : null;
   const notifications = useNotifications(tenant.slug, Boolean(me.data));
-  const unread = notifications.data?.pages[0]?.unread ?? 0;
+  const [, setNotifVersion] = useState(0);
+
+  useEffect(() => {
+    const onUpdate = () => setNotifVersion((v) => v + 1);
+    window.addEventListener("storage", onUpdate);
+    window.addEventListener("bh_application_updated", onUpdate);
+    return () => {
+      window.removeEventListener("storage", onUpdate);
+      window.removeEventListener("bh_application_updated", onUpdate);
+    };
+  }, []);
+
+  const localUnread = (() => {
+    try {
+      const rawEv = localStorage.getItem("bh_application_events");
+      if (!rawEv) return 0;
+      const parsedEv = JSON.parse(rawEv);
+      if (!Array.isArray(parsedEv)) return 0;
+      const rawRead = localStorage.getItem("bh_read_notifications");
+      const readSet = new Set(rawRead ? JSON.parse(rawRead) : []);
+      const userEmail = me.data?.email?.toLowerCase();
+      return parsedEv.filter(
+        (item: any) =>
+          (!userEmail || !item.email || item.email.toLowerCase() === userEmail) &&
+          item.event?.id &&
+          !readSet.has(item.event.id)
+      ).length;
+    } catch {
+      return 0;
+    }
+  })();
+
+  const unread = (notifications.data?.pages[0]?.unread ?? 0) + localUnread;
   useRealtime(tenant.slug, Boolean(me.data));
 
   const profile = useProfile(tenant.slug);

@@ -128,6 +128,9 @@ export const STAGE_TONES: Record<string, Tone> = {
   IN_REVIEW: "amber",
   SHORTLISTED: "blue",
   ASSESSMENT: "amber",
+  TEST_SUBMITTED: "amber",
+  ASSESSMENT_SUBMITTED: "amber",
+  ROUND_1_PASSED: "teal",
   INTERVIEW: "blue",
   OFFER: "teal",
   ONBOARDING: "teal",
@@ -140,7 +143,14 @@ export const STAGE_TONES: Record<string, Tone> = {
 
 export function StagePill({ stage }: { stage: string }) {
   const tone = STAGE_TONES[stage] ?? "gray";
-  const label = stage.replace(/_/g, " ");
+  const label =
+    stage === "TEST_SUBMITTED"
+      ? "Test Submitted"
+      : stage === "ASSESSMENT_SUBMITTED"
+      ? "Assessment Submitted"
+      : stage === "ROUND_1_PASSED"
+      ? "Round 1 Passed"
+      : stage.replace(/_/g, " ");
   return (
     <Pill tone={tone} dot>
       {label}

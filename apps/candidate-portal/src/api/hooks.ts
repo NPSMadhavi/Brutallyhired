@@ -97,10 +97,25 @@ export const useJob = (slug: string, ref: string) =>
 
 // ── Profile ─────────────────────────
 
+export interface ProfileResumeDto {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  createdAt: string;
+  url: string;
+}
+
 export const useProfile = (slug: string) =>
   useQuery({
     queryKey: qk.profile(slug),
-    queryFn: () => api<{ profile: ProfileDto | null; email: string; displayName: string | null }>(tp(slug, "/profile")),
+    queryFn: () =>
+      api<{
+        profile: ProfileDto | null;
+        email: string;
+        displayName: string | null;
+        latestResume?: ProfileResumeDto | null;
+      }>(tp(slug, "/profile")),
     enabled: Boolean(slug),
   });
 

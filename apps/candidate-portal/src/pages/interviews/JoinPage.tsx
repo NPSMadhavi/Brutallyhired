@@ -76,6 +76,48 @@ export function JoinPage() {
   const isRound2 = sequence === 2;
   const isRound3 = sequence === 3;
 
+  // Round 1 & Round 2 use the Technical Assessment page (Image 2).
+  // If candidate navigates to join video room for round 1 or 2, redirect them to the assessment URL.
+  useEffect(() => {
+    if (isRound1 || isRound2) {
+      const suffix = isRound2 ? "-round-2" : "";
+      let assessmentUrl = `/${tenant.slug}/applications/${appId}/assessments/invite-${appId}${suffix}`;
+      try {
+        const raw = localStorage.getItem("bh_admin_applications");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const app = parsed.find((a: any) => a.id === appId);
+          if (isRound2 && (app?.round2Link || app?.round2AssessmentUrl)) {
+            assessmentUrl = app.round2Link || app.round2AssessmentUrl;
+          } else if (isRound1 && (app?.round1Link || app?.assessmentUrl)) {
+            assessmentUrl = app.round1Link || app.assessmentUrl;
+          }
+        }
+      } catch {}
+
+      if (assessmentUrl.startsWith("http")) {
+        try {
+          const u = new URL(assessmentUrl);
+          if (typeof window !== "undefined" && u.origin === window.location.origin) {
+            navigate(u.pathname + u.search + u.hash, { replace: true });
+            return;
+          }
+        } catch {}
+        window.location.href = assessmentUrl;
+      } else {
+        navigate(assessmentUrl, { replace: true });
+      }
+    }
+  }, [isRound1, isRound2, tenant.slug, appId, navigate]);
+
+  if (isRound1 || isRound2) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <PageLoader />
+      </div>
+    );
+  }
+
   const roundTitle = isRound1
     ? "Round 1: Technical & Architecture Practical Assignment"
     : isRound2

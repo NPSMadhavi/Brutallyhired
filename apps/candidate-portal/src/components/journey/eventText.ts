@@ -11,7 +11,7 @@ export function useEventText() {
     const dateSrc = d.respondBy ?? d.startDate ?? d.dueAt;
     const vars = {
       ...d,
-      when: d.startsAt ? f.dateTime(d.startsAt) : "",
+      when: d.startsAt ? f.dateTime(d.startsAt) : (d.when ?? ""),
       date: dateSrc ? f.date(dateSrc) : "",
     };
     return { title: t(`events.${e.type}.title`, vars), body: t(`events.${e.type}.body`, vars) };
