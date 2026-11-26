@@ -175,10 +175,10 @@ export async function extractAndSummariseResume(text: string): Promise<ResumeSum
   if (aiEnabled) {
     try {
       const parsed = await callAiJson<any>({
-        message: cleanText.slice(0, 5000),
+        message: cleanText.slice(0, 3000),
         systemPrompt: RESUME_EXTRACTION_SYSTEM_PROMPT,
         temperature: 0,
-        timeoutMs: 120_000,
+        timeoutMs: 20_000,
       });
 
       if (parsed && typeof parsed === "object") {

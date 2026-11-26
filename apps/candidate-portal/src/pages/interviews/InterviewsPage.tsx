@@ -53,6 +53,20 @@ export function InterviewsPage() {
     `/${tenant.slug}/applications/${appId}/assessments/invite-${appId}-round-2`
   );
   const [refreshKey, setRefreshKey] = useState(0);
+  const [dbRound1, setDbRound1] = useState<any>(null);
+  const [dbRound2, setDbRound2] = useState<any>(null);
+
+  useEffect(() => {
+    if (!appId) return;
+    fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round1`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.invite) setDbRound1(d.invite); })
+      .catch(() => {});
+    fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round2`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.project) setDbRound2(d.project); })
+      .catch(() => {});
+  }, [appId, tenant.slug, refreshKey]);
 
   useEffect(() => {
     const handleUpdate = () => setRefreshKey((k) => k + 1);
@@ -220,8 +234,9 @@ export function InterviewsPage() {
 
     setPracticalAssessmentLinkR2(computedR2AssessmentLink);
 
-    // Check if test has been submitted
+    // Check if test has been submitted (DB + localStorage)
     const isR1Submitted = Boolean(
+      dbRound1?.status === "SUBMITTED" ||
       candidateApp?.round1Submitted ||
       candidateApp?.stage === "TEST_SUBMITTED" ||
       candidateApp?.stage === "ASSESSMENT_SUBMITTED" ||
@@ -229,6 +244,8 @@ export function InterviewsPage() {
     );
 
     const isR2Submitted = Boolean(
+      dbRound2?.submittedAt ||
+      ["SUBMITTED", "AI_EVALUATION_COMPLETED", "PASSED", "REJECTED"].includes(dbRound2?.status || "") ||
       candidateApp?.round2Submitted ||
       candidateApp?.stage === "ROUND_2_SUBMITTED" ||
       r2Sub
@@ -236,6 +253,8 @@ export function InterviewsPage() {
 
     // Check if candidate is passed / selected for Round 1 by HR
     const isR1Passed = Boolean(
+      dbRound1?.hrReviewStatus === "APPROVED" ||
+      Boolean(dbRound2) ||
       candidateApp?.round1Passed ||
       candidateApp?.round1Selected ||
       candidateApp?.round2Unlocked ||
@@ -245,9 +264,10 @@ export function InterviewsPage() {
       ["OFFER", "HIRED"].includes(candidateApp?.stage || "")
     );
 
+    const dbR3 = q.data?.find((r) => r.sequence === 3);
     const r1Done = isR1Passed || r1Sched?.status === "COMPLETED";
-    const r2Done = Boolean(candidateApp?.round2Passed || r2Sched?.status === "COMPLETED");
-    const r3Done = r3Sched?.status === "COMPLETED";
+    const r2Done = Boolean(dbRound2?.status === "PASSED" || dbRound2?.hrDecision === "APPROVED" || candidateApp?.round2Passed || r2Sched?.status === "COMPLETED");
+    const r3Done = Boolean(dbR3?.status === "COMPLETED" || r3Sched?.status === "COMPLETED");
 
     // Compute Round 1 Status & Dates (only show when actually booked by candidate)
     const r1Booked = candidateApp?.round1BookedSlot as { id: string; label: string; isoStart: string } | undefined;
@@ -374,7 +394,7 @@ export function InterviewsPage() {
     }
 
     setRounds(visibleRounds);
-  }, [appId, refreshKey]);
+  }, [appId, refreshKey, dbRound1, dbRound2, q.data]);
 
   const isRejectedApp = (() => {
     try {

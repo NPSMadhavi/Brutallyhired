@@ -1,4 +1,4 @@
-import type { Tenant } from "@verity/db";
+import { prisma, type Tenant } from "@verity/db";
 import nodemailer from "nodemailer";
 import { env } from "../config/env.js";
 import en from "../locales/email/en.json" with { type: "json" };
@@ -65,5 +65,58 @@ ${url ? `<tr><td style="padding:24px 32px 0"><a href="${escapeHtml(url)}" style=
   } catch (err) {
     // Email failures must not break the user's action; they're logged for retry/alerting.
     logger.error({ err, template: opts.template }, "email send failed");
+  }
+}
+
+/**
+ * Sends a templated email with persistent EmailLog tracking and optional deduplication key.
+ * Prevents duplicate notifications for the same milestone/decision.
+ */
+export async function sendTrackedTemplate(
+  opts: SendOptions & { tenantId: string; applicationId?: string; dedupKey?: string },
+): Promise<{ sent: boolean; skipped?: boolean; error?: string }> {
+  if (opts.dedupKey) {
+    const existing = await prisma.emailLog.findUnique({ where: { dedupKey: opts.dedupKey } });
+    if (existing && existing.status === "SENT") {
+      return { sent: false, skipped: true };
+    }
+  }
+
+  const cat = catalogs[opts.locale ?? "en"] ?? en;
+  const t = cat[opts.template] as { subject: string; heading: string; body: string; highlight?: string } | undefined;
+  const tenantName = opts.tenant?.name ?? cat.layout.platform;
+  const vars = { ...opts.vars, tenant: tenantName };
+  const subject = opts.subject || (t ? fill(t.subject, vars) : "Notification from Brutallyhired");
+
+  try {
+    await sendTemplate(opts);
+    await prisma.emailLog.upsert({
+      where: opts.dedupKey ? { dedupKey: opts.dedupKey } : { id: `log-${Date.now()}-${Math.random()}` },
+      update: { status: "SENT", subject, sentAt: new Date(), error: null },
+      create: {
+        tenantId: opts.tenantId,
+        applicationId: opts.applicationId,
+        recipient: opts.to,
+        template: opts.template,
+        subject,
+        status: "SENT",
+        dedupKey: opts.dedupKey,
+      },
+    });
+    return { sent: true };
+  } catch (err: any) {
+    const msg = String(err?.message || err);
+    await prisma.emailLog.create({
+      data: {
+        tenantId: opts.tenantId,
+        applicationId: opts.applicationId,
+        recipient: opts.to,
+        template: opts.template,
+        subject,
+        status: "FAILED",
+        error: msg,
+      },
+    }).catch(() => {});
+    return { sent: false, error: msg };
   }
 }

@@ -37,6 +37,7 @@ model Tenant {
   notifications       Notification[]
   assessmentTemplates AssessmentTemplate[]
   onboardingTemplate  OnboardingTemplateItem[]
+  emailLogs           EmailLog[]
 }
 
 // ─────────────────────────── Identity ───────────────────────────
@@ -298,11 +299,17 @@ enum ApplicationStage {
   DRAFT
   SUBMITTED
   IN_REVIEW
+  SHORTLISTED
+  ON_HOLD
   ASSESSMENT
+  ROUND1_PENDING_HR_APPROVAL
+  ROUND2_PENDING_HR_APPROVAL
   INTERVIEW
+  ROUND3_PENDING_FINAL_HR_APPROVAL
   OFFER
   ONBOARDING
   HIRED
+  REJECTED
   NOT_SELECTED
   WITHDRAWN
 }
@@ -330,6 +337,8 @@ model Application {
   talentPoolUntil   DateTime?
   submittedAt       DateTime?
   closedAt          DateTime?
+  holdReason        String?
+  screeningResult   Json?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -342,6 +351,7 @@ model Application {
   scores              ApplicationScore[]
   overrides           EligibilityOverride[]
   assessmentInvites   AssessmentInvite[]
+  technicalProject    TechnicalProjectAssessment?
   interviewRounds     InterviewRound[]
   offer               Offer?
   onboardingTasks     OnboardingTask[]
@@ -461,15 +471,23 @@ enum InviteStatus {
 }
 
 model AssessmentInvite {
-  id            String             @id @default(cuid())
-  applicationId String
-  templateId    String
-  dueAt         DateTime
-  status        InviteStatus       @default(INVITED)
-  createdAt     DateTime           @default(now())
-  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  template      AssessmentTemplate @relation(fields: [templateId], references: [id])
-  attempt       AssessmentAttempt?
+  id                 String             @id @default(cuid())
+  applicationId      String
+  templateId         String
+  roundNumber        Int                @default(1)
+  dueAt              DateTime
+  scheduledSlotStart DateTime?
+  scheduledSlotEnd   DateTime?
+  status             InviteStatus       @default(INVITED)
+  hrReviewStatus     String             @default("PENDING") // PENDING | APPROVED | REJECTED
+  hrReviewedBy       String?
+  hrReviewedAt       DateTime?
+  hrComments         String?
+  emailSentAt        DateTime?
+  createdAt          DateTime           @default(now())
+  application        Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  template           AssessmentTemplate @relation(fields: [templateId], references: [id])
+  attempt            AssessmentAttempt?
 }
 
 model AssessmentAttempt {
@@ -480,8 +498,9 @@ model AssessmentAttempt {
   submittedAt DateTime?
   answers     Json?
   /// Internal.
-  autoScore   Float?
-  invite      AssessmentInvite    @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  autoScore    Float?
+  round1Report Json?
+  invite       AssessmentInvite    @relation(fields: [inviteId], references: [id], onDelete: Cascade)
   events      ProctoringEvent[]
   chunks      ProctoringChunk[]
 }
@@ -526,23 +545,33 @@ enum InterviewStatus {
 }
 
 model InterviewRound {
-  id              String              @id @default(cuid())
-  applicationId   String
-  sequence        Int
-  title           String
-  description     String?
-  preparation     String?
-  durationMinutes Int
-  status          InterviewStatus     @default(AWAITING_BOOKING)
-  bookByAt        DateTime?
-  scheduledStart  DateTime?
-  scheduledEnd    DateTime?
-  roomName        String              @unique
-  createdAt       DateTime            @default(now())
-  application     Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  panelists       InterviewPanelist[]
-  slots           InterviewSlot[]
-  rescheduleAsks  RescheduleRequest[]
+  id                  String              @id @default(cuid())
+  applicationId       String
+  sequence            Int
+  title               String
+  description         String?
+  preparation         String?
+  durationMinutes     Int
+  status              InterviewStatus     @default(AWAITING_BOOKING)
+  bookByAt            DateTime?
+  scheduledStart      DateTime?
+  scheduledEnd        DateTime?
+  roomName            String              @unique
+  hrFeedback          String?
+  hrScore             Int?
+  hrRecommendation    String?             // HIRE | NO_HIRE | HOLD
+  hrDecision          String?             // PENDING | HIRED | REJECTED
+  hrDecidedBy         String?
+  hrDecidedAt         DateTime?
+  decisionEmailSentAt DateTime?
+  proctoringSummary   Json?
+  attendanceJoinedAt  DateTime?
+  attendanceLeftAt    DateTime?
+  createdAt           DateTime            @default(now())
+  application         Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  panelists           InterviewPanelist[]
+  slots               InterviewSlot[]
+  rescheduleAsks      RescheduleRequest[]
 
   @@index([applicationId, sequence])
 }
@@ -668,4 +697,63 @@ model Notification {
   application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([userId, tenantId, createdAt])
+}
+
+// ─────────────────────────── Round 2: AI Technical Project ───────────────────────────
+
+model TechnicalProjectAssessment {
+  id                  String      @id @default(cuid())
+  applicationId       String      @unique
+  tenantId            String
+  jobId               String
+  /// PENDING_GENERATION | GENERATED | HR_APPROVED | INVITED | IN_PROGRESS | SUBMITTED | AI_EVALUATION_COMPLETED | PASSED | REJECTED | REVISION_REQUESTED
+  status              String      @default("GENERATED")
+  taskSpec            Json
+  durationMinutes     Int         @default(90)
+  totalMarks          Int         @default(100)
+  hrTaskApproved      Boolean     @default(false)
+  hrTaskReviewedBy    String?
+  hrTaskReviewedAt    DateTime?
+  scheduledSlotStart  DateTime?
+  scheduledSlotEnd    DateTime?
+  dueAt               DateTime?
+  inviteSentAt        DateTime?
+  startedAt           DateTime?
+  submittedAt         DateTime?
+  submissionFiles     Json?
+  architectureNotes   String?
+  repoUrl             String?
+  submissionMeta      Json?
+  aiReport            Json?
+  evaluatedAt         DateTime?
+  evaluatedModel      String?
+  /// PENDING | APPROVED | REJECTED | FURTHER_REVIEW
+  hrDecision          String      @default("PENDING")
+  hrDecisionComments  String?
+  hrDecisionBy        String?
+  hrDecisionAt        DateTime?
+  decisionEmailSentAt DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  application         Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+// ─────────────────────────── Email Delivery & Deduplication ───────────────────────────
+
+model EmailLog {
+  id            String   @id @default(cuid())
+  tenantId      String
+  applicationId String?
+  recipient     String
+  template      String
+  subject       String
+  status        String   @default("SENT") // SENT | FAILED
+  dedupKey      String?  @unique
+  error         String?
+  sentAt        DateTime @default(now())
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, applicationId, sentAt])
 }

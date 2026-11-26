@@ -2,8 +2,9 @@ import { fetchJoinToken, useInterview, useMe } from "@/api/hooks";
 import { useTenantCtx } from "@/components/layout/TenantContext";
 import { Button } from "@/components/ui/Button";
 import { ErrorState, InlineError, PageLoader } from "@/components/ui/feedback";
-import { Check, ChevronLeft, Clock, Monitor, Video } from "@/components/ui/icons";
+import { Check, ChevronLeft, Clock, Monitor, Shield, Video } from "@/components/ui/icons";
 import { Avatar } from "@/components/ui/misc";
+import { useProctoring } from "@/hooks/useProctoring";
 import { sendEmailNotification } from "@/lib/emailService";
 import { useFormat } from "@/lib/format";
 import { PreJoin, type LocalUserChoices } from "@livekit/components-react";
@@ -58,8 +59,104 @@ export function JoinPage() {
   const [choices, setChoices] = useState<LocalUserChoices | null>(null);
   const [conn, setConn] = useState<JoinTokenDto | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const sequence = roundId === "round-3" ? 3 : roundId === "round-2" ? 2 : 1;
+  const isRound1 = sequence === 1;
+  const isRound2 = sequence === 2;
+  const isRound3 = sequence === 3;
+
   const [left, setLeft] = useState(false);
   const [passingRound, setPassingRound] = useState(false);
+  const proctor = useProctoring(tenant.slug);
+  const [r3Violations, setR3Violations] = useState<Array<{ id: string; eventType: string; description: string; timestamp: string }>>([]);
+  const [r3PortMonitor, setR3PortMonitor] = useState<{ connected: boolean; usbCount: number; displaysCount: number; power: string }>({
+    connected: false,
+    usbCount: 0,
+    displaysCount: 1,
+    power: "AC Power",
+  });
+
+  // Record Round 3 proctoring & attendance on join
+  useEffect(() => {
+    if (!isRound3 || !choices || left) return;
+    fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round3/attendance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
+      body: JSON.stringify({
+        action: "JOIN",
+        proctoringSummary: {
+          mode: "WEB_PROCTORING",
+          violationCount: r3Violations.length,
+          events: r3Violations,
+          portMonitorConnected: r3PortMonitor.connected,
+        },
+      }),
+    }).catch(() => {});
+  }, [isRound3, choices, left, tenant.slug, appId]);
+
+  // Round 3 tab focus & Port Monitor 4899 proctoring
+  useEffect(() => {
+    if (!isRound3 || !choices || left) return;
+    const logEvent = (eventType: string, description: string) => {
+      setR3Violations((prev) => {
+        const next = [
+          ...prev.slice(-19),
+          {
+            id: `r3-v-${Date.now()}`,
+            eventType,
+            description,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+          },
+        ];
+        fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round3/attendance`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
+          body: JSON.stringify({
+            action: "TELEMETRY",
+            proctoringSummary: {
+              mode: r3PortMonitor.connected ? "PORT_MONITOR_4899" : "WEB_PROCTORING",
+              violationCount: next.length,
+              events: next,
+              displaysCount: r3PortMonitor.displaysCount,
+            },
+          }),
+        }).catch(() => {});
+        return next;
+      });
+    };
+
+    const onVis = () => {
+      if (document.hidden) logEvent("TAB_SWITCH", "Candidate switched away from Round 3 interview tab.");
+    };
+    const onBlur = () => {
+      logEvent("WINDOW_BLUR", "Round 3 interview window lost focus.");
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("blur", onBlur);
+
+    const poll = window.setInterval(async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:4899/status");
+        if (res.ok) {
+          const data = await res.json();
+          setR3PortMonitor({
+            connected: true,
+            usbCount: data.usb?.count || 0,
+            displaysCount: data.displays?.count || 1,
+            power: data.power?.label || "AC Power",
+          });
+          if (data.displays?.count > 1) {
+            logEvent("MULTI_DISPLAY", `External display detected (${data.displays.count} monitors).`);
+          }
+        }
+      } catch {}
+    }, 4000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("blur", onBlur);
+      window.clearInterval(poll);
+    };
+  }, [isRound3, choices, left, tenant.slug, appId, r3PortMonitor.connected, r3PortMonitor.displaysCount]);
 
   // Fallback video preview stream
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -70,11 +167,6 @@ export function JoinPage() {
   const [whiteboardCode, setWhiteboardCode] = useState(
     "// Interactive Live Technical Whiteboard\n// Candidate and Panel can collaborate live here:\n\nfunction calculateIdempotencyKey(payload: any): string {\n  return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');\n}"
   );
-
-  const sequence = roundId === "round-3" ? 3 : roundId === "round-2" ? 2 : 1;
-  const isRound1 = sequence === 1;
-  const isRound2 = sequence === 2;
-  const isRound3 = sequence === 3;
 
   // Round 1 & Round 2 use the Technical Assessment page (Image 2).
   // If candidate navigates to join video room for round 1 or 2, redirect them to the assessment URL.
@@ -218,36 +310,28 @@ export function JoinPage() {
         );
         navigate(`/${tenant.slug}/applications/${appId}/interviews/round-3`);
       } else if (isRound3) {
-        const rawApps = localStorage.getItem("bh_admin_applications");
-        if (rawApps) {
-          const parsedApps = JSON.parse(rawApps);
-          if (Array.isArray(parsedApps)) {
-            const updated = parsedApps.map((a: any) =>
-              a.id === appId || a.stage === "INTERVIEW" ? { ...a, stage: "OFFER", score: 96 } : a
-            );
-            localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
-          }
-        }
-
-        await sendEmailNotification({
-          to: candidateInfo.email,
-          recipientName: candidateInfo.name,
-          stage: "OFFER",
-          jobTitle: candidateInfo.jobTitle,
-          portalPath: `/${tenant.slug}/applications/${appId}/offer`,
-          tenantSlug: tenant.slug,
-          customHeading: "Congratulations! You have an official job offer from Brutallyhired",
-          customBody:
-            "Following your outstanding performance across all 3 technical and leadership interview rounds, we are thrilled to formally extend an offer of employment. Please review your terms, compensation package, and sign in the candidate portal.",
-        });
+        await fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round3/attendance`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
+          body: JSON.stringify({
+            action: "LEAVE",
+            proctoringSummary: {
+              mode: r3PortMonitor.connected ? "PORT_MONITOR_4899" : "WEB_PROCTORING",
+              violationCount: r3Violations.length,
+              events: r3Violations,
+              portMonitorConnected: r3PortMonitor.connected,
+              completedAt: new Date().toISOString(),
+            },
+          }),
+        }).catch(() => {});
 
         window.dispatchEvent(new Event("storage"));
         window.dispatchEvent(
           new CustomEvent("bh_application_updated", {
-            detail: { appId, stage: "OFFER" },
+            detail: { appId, roundId: "round-3", status: "COMPLETED" },
           })
         );
-        navigate(`/${tenant.slug}/applications/${appId}/offer`);
+        setLeft(true);
       }
     } catch (e) {
       console.warn("Conclude call error:", e);
@@ -283,9 +367,9 @@ export function JoinPage() {
                 size="sm"
                 loading={passingRound}
                 onClick={() => void handleConcludeCall()}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                className="bg-ink hover:bg-ink-2 text-white font-bold text-xs"
               >
-                {isRound3 ? "Pass Round & Generate Formal Offer →" : "Pass Round & Unlock Next Round →"}
+                {isRound3 ? "End Interview & Submit Attendance" : "Conclude & Proceed"}
               </Button>
             )}
           </div>
@@ -409,8 +493,27 @@ export function JoinPage() {
                 onClick={() => void handleConcludeCall()}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl"
               >
-                {isRound3 ? "Conclude & Generate Formal Offer →" : "Conclude & Unlock Next Round →"}
+                {isRound3 ? "End Interview & Submit Attendance" : "Conclude & Unlock Next Round →"}
               </Button>
+            </div>
+          </div>
+
+          {/* Round 3 Proctoring Telemetry Bar (Consistent with Round 1) */}
+          <div className="card p-4 bg-gradient-to-r from-white to-blue-50/40 border border-blue-100 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <Shield size={16} className="text-brand" />
+              <div>
+                <span className="text-xs font-bold text-ink block">BrutalAssessAI™ Round 3 Proctoring Active</span>
+                <span className="text-[11px] text-ink-muted">
+                  {r3PortMonitor.connected ? "Port Monitor 4899 Connected" : "Web Telemetry Active"} · {r3PortMonitor.displaysCount} Display · {r3PortMonitor.usbCount} USB Devices
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={clsx("rounded-full px-3 py-1 text-xs font-bold", r3Violations.length > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")}>
+                {r3Violations.length} Focus / Integrity Events Logged
+              </span>
             </div>
           </div>
 

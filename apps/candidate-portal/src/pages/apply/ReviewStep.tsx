@@ -105,10 +105,14 @@ export function ReviewStep() {
               experience: p?.experience ? String(p.experience).replace(/^Y(\d+)_(\d+)$/, "$1-$2 years") : undefined,
               jobTitle: draft.job?.title || "Applicant",
               department: draft.job?.department || "General",
-              stage: "SUBMITTED",
+              stage: "IN_REVIEW",
+              screeningTestSent: true,
+              screeningTestSubmitted: false,
+              screeningSentAt: new Date().toISOString(),
+              screeningExpiresAt: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
               score: 85,
               submittedAt: "Just now",
-              notes: "Candidate applied via candidate portal.",
+              notes: "Candidate applied via candidate portal. Automatically moved to In Review & Screening Test dispatched.",
               hardScore: 48,
               preferredScore: 37,
               resumeName: draft.resume?.name || "Candidate_Resume.pdf",
@@ -143,7 +147,7 @@ export function ReviewStep() {
             if (local) {
               try {
                 const parsed = JSON.parse(local);
-                parsed.stage = "SUBMITTED";
+                parsed.stage = "IN_REVIEW";
                 localStorage.setItem(`bh_draft_${draft.id}`, JSON.stringify(parsed));
               } catch {}
             }

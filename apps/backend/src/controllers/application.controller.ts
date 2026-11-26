@@ -17,6 +17,7 @@ import { buildOverview } from "../services/overview.service.js";
 import { newApplicationReference } from "../services/reference.service.js";
 import { readResumeForApplication } from "../services/resume.service.js";
 import { scoreApplication } from "../services/scoring.service.js";
+import { onApplicationSubmittedAuto } from "../services/automation.service.js";
 import { changeStage } from "../services/stage.service.js";
 import { ah, conflict, HttpError, notFound, parse } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
@@ -94,7 +95,14 @@ export const startApplication = ah(async (req, res) => {
     });
   }
   const existing = await prisma.application.findUnique({ where: { jobId_userId: { jobId: job.id, userId: user.id } } });
-  if (existing) return res.json({ id: existing.id, stage: existing.stage });
+  if (existing) {
+    if (existing.stage === "NOT_SELECTED" || existing.stage === "WITHDRAWN") {
+      // Allow fresh application: delete old rejected/withdrawn app so candidate can re-apply cleanly!
+      await prisma.application.delete({ where: { id: existing.id } });
+    } else {
+      return res.json({ id: existing.id, stage: existing.stage });
+    }
+  }
   if (job.status !== "OPEN") throw new HttpError(410, "job_closed");
   const created = await prisma.application.create({
     data: {
@@ -235,7 +243,7 @@ export const submitApplication = ah(async (req, res) => {
   await prisma.application.update({
     where: { id: app.id },
     data: {
-      stage: "SUBMITTED",
+      stage: "IN_REVIEW",
       submittedAt: new Date(),
       jobVersion: job.version,
       consentAccuracy: input.consentAccuracy,
@@ -243,8 +251,9 @@ export const submitApplication = ah(async (req, res) => {
       talentPoolUntil: input.talentPool && tenant.talentPoolMonths > 0 ? addMs(new Date(), days(30 * tenant.talentPoolMonths)) : null,
     },
   });
-  await internalEvent(app.id, "stage_changed", { from: "DRAFT", to: "SUBMITTED" }, app.userId);
+  await internalEvent(app.id, "stage_changed", { from: "DRAFT", to: "IN_REVIEW" }, app.userId);
   await publishMilestone({ applicationId: app.id, type: "application_submitted", data: { reference: app.reference } });
+  void onApplicationSubmittedAuto(app.id).catch((err) => logger.error({ err }, "auto screening dispatch failed"));
   void scoreApplication(app.id).catch((err) => logger.error({ err }, "scoring failed"));
   res.json(await buildOverview(app.id));
 });

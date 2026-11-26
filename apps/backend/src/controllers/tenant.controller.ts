@@ -18,6 +18,37 @@ export const getTenant: RequestHandler = (req, res) => {
   res.json(toTenantPublic(tenantOf(req)));
 };
 
+export const listJobs = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const jobs = await prisma.job.findMany({
+    where: {
+      tenantId: tenant.id,
+      status: "OPEN",
+    },
+    include: { questions: true },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(jobs.map(jobPublic));
+});
+
+export const deleteApplicationDirect = ah(async (req, res) => {
+  const tenant = tenantOf(req);
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ error: "Missing application id" });
+  }
+  await prisma.application.deleteMany({
+    where: {
+      tenantId: tenant.id,
+      OR: [
+        { id },
+        { user: { email: id.toLowerCase().trim() } },
+      ],
+    },
+  });
+  res.json({ ok: true, deleted: id });
+});
+
 export const getJob = ah(async (req, res) => {
   const tenant = tenantOf(req);
   const ref = req.params.ref || "software-developer";
@@ -1203,33 +1234,117 @@ export const getProctoringTelemetry = ah(async (req, res) => {
 // ============================================================================
 
 function getTenantSlotsFilePath(tenantSlug: string): string {
-  const baseDir = path.resolve(
-    process.cwd(),
-    "storage",
-    "tenants",
-    tenantSlug,
+  const safe = tenantSlug.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(
+    env.STORAGE_DIR || "./storage",
+    `interview_slots_${safe}.json`,
   );
+}
 
-  return path.join(baseDir, "interview-slots.json");
+function getCandidateSlotsFilePaths(tenantSlug: string): string[] {
+  const safe = tenantSlug.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return [
+    path.join(env.STORAGE_DIR || "./storage", `interview_slots_${safe}.json`),
+    path.resolve(process.cwd(), "storage", "tenants", tenantSlug, "interview-slots.json"),
+  ];
 }
 
 export const getInterviewSlots = ah(async (req, res) => {
   const tenant = tenantOf(req);
-  const filePath = getTenantSlotsFilePath(tenant.slug);
+  const possiblePaths = getCandidateSlotsFilePaths(tenant.slug);
 
-  try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    const slots = JSON.parse(raw);
+  let rawSlots: any[] = [];
+  let foundFile = false;
 
-    if (Array.isArray(slots) && slots.length > 0) {
-      return res.json({
-        ok: true,
-        slots,
-        source: "database_storage",
-      });
+  for (const p of possiblePaths) {
+    try {
+      const raw = await fs.readFile(p, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        rawSlots = parsed;
+        foundFile = true;
+        break;
+      }
+    } catch {}
+  }
+
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+  if (foundFile && rawSlots.length > 0) {
+    // Filter out past AVAILABLE slots (keep booked/completed for history if needed, or future available)
+    const validSlots = rawSlots.filter((s: any) => {
+      if (s.status !== "AVAILABLE") return true;
+      if (!s.date || !s.startTime) return false;
+      if (s.date < todayStr) return false;
+      const slotDt = new Date(`${s.date}T${s.startTime}:00`);
+      return slotDt.getTime() > now.getTime() - 15 * 60 * 1000;
+    });
+
+    // Check if we need to supplement with upcoming slots
+    const availableFutureCount = validSlots.filter(
+      (s: any) => s.status === "AVAILABLE" && s.roundNumber === 1
+    ).length;
+
+    if (availableFutureCount < 5) {
+      const times = [
+        { start: "10:00", end: "11:00" },
+        { start: "11:30", end: "12:30" },
+        { start: "14:00", end: "15:00" },
+        { start: "15:30", end: "16:30" },
+        { start: "17:00", end: "18:00" },
+      ];
+      for (let dOffset = 0; dOffset < 4; dOffset++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() + dOffset);
+        const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        for (const t of times) {
+          const [hh, mm] = t.start.split(":").map(Number);
+          const slotDt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm, 0, 0);
+          if (slotDt.getTime() <= now.getTime() + 15 * 60_000) continue;
+          const slotId = `slot-r1-${tenant.slug}-${dateStr}-${t.start.replace(":", "")}`;
+          if (!validSlots.some((s: any) => s.id === slotId || (s.date === dateStr && s.startTime === t.start && s.roundNumber === 1))) {
+            validSlots.push({
+              id: slotId,
+              jobId: "default",
+              jobTitle: "Software Developer",
+              roundNumber: 1,
+              roundName: "Round 1 (Proctored Technical Assessment)",
+              date: dateStr,
+              startTime: t.start,
+              endTime: t.end,
+              durationMinutes: 60,
+              interviewerName: "Tanuja HR (Talent Acquisition Lead)",
+              interviewerEmail: "hr@brutallyhired.com",
+              mode: "PROCTORED_ASSESSMENT",
+              status: "AVAILABLE",
+              createdAt: now.toISOString(),
+            });
+          }
+        }
+      }
     }
-  } catch {
-    // File does not exist yet; query the database for scheduled rounds/slots.
+
+    // Sort strictly chronologically: ascending date, then ascending start time
+    validSlots.sort((a: any, b: any) => {
+      const aIso = `${a.date || "1970-01-01"}T${a.startTime || "00:00"}:00`;
+      const bIso = `${b.date || "1970-01-01"}T${b.startTime || "00:00"}:00`;
+      return aIso.localeCompare(bIso);
+    });
+
+    // Write back cleaned and sorted list
+    const mainPath = getTenantSlotsFilePath(tenant.slug);
+    try {
+      await fs.mkdir(path.dirname(mainPath), { recursive: true });
+      await fs.writeFile(mainPath, JSON.stringify(validSlots, null, 2), "utf-8");
+    } catch {}
+
+    return res.json({
+      ok: true,
+      slots: validSlots,
+      source: "database_storage",
+    });
   }
 
   try {

@@ -66,7 +66,9 @@ export async function buildOverview(applicationId: string, now = new Date()): Pr
   const hasAssessment = Boolean(app.job.assessmentTemplateId) || app.assessmentInvites.length > 0;
   const track = buildTrack(reachedStage, hasAssessment, reachedAt, app.stage === "HIRED");
 
-  const pendingInvite = app.assessmentInvites.find((i) => (i.status === "INVITED" || i.status === "IN_PROGRESS") && i.dueAt > now);
+  const pendingInvite = app.assessmentInvites.find(
+    (i) => (i.status === "INVITED" || i.status === "IN_PROGRESS") && i.dueAt > now && (!i.scheduledSlotStart || i.emailSentAt !== null),
+  );
   const toBook = app.interviewRounds.find((r) => r.status === "AWAITING_BOOKING");
   const upcoming = app.interviewRounds.find((r) => r.status === "SCHEDULED" && r.scheduledEnd && r.scheduledEnd > now);
   const requiredOpenTasks = app.onboardingTasks.filter((t) => t.required && (t.status === "PENDING" || t.status === "REJECTED"));

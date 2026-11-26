@@ -56,17 +56,19 @@ export function ScreeningTestPage() {
   const questions = loadQuestionsForApplication(appId);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
+  const [evalResult, setEvalResult] = useState<{ decision: "SHORTLISTED" | "ON_HOLD"; score: number; reason: string } | null>(null);
   const [submitted, setSubmitted] = useState<boolean>(() => {
     try {
       const rawApps = localStorage.getItem("bh_admin_applications");
       if (rawApps) {
         const apps = JSON.parse(rawApps);
         const match = Array.isArray(apps) ? apps.find((a: any) => a.id === appId) : null;
-        if (!match || !match.screeningTestSent || match.screeningTestSubmitted) return true;
+        if (match?.screeningTestSubmitted) return true;
         return false;
       }
     } catch {}
-    return true;
+    return false;
   });
 
   useEffect(() => {
@@ -76,7 +78,7 @@ export function ScreeningTestPage() {
         if (rawApps) {
           const apps = JSON.parse(rawApps);
           const match = Array.isArray(apps) ? apps.find((a: any) => a.id === appId) : null;
-          setSubmitted(!match || !match.screeningTestSent || Boolean(match.screeningTestSubmitted));
+          setSubmitted(Boolean(match?.screeningTestSubmitted));
         }
       } catch {}
     };
@@ -116,7 +118,7 @@ export function ScreeningTestPage() {
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     for (const q of questions) {
       if (q.required && !(answers[q.id] || "").trim()) {
@@ -125,10 +127,11 @@ export function ScreeningTestPage() {
       }
     }
     setError(null);
+    setEvaluating(true);
 
     let totalPoints = 0;
     let earnedPoints = 0;
-    const detailedAnswers: SubmittedScreeningAnswer[] = questions.map((q) => {
+    const detailedAnswers = questions.map((q) => {
       const pts = Number(q.points) || 10;
       totalPoints += pts;
       const rawAns = (answers[q.id] || "").trim();
@@ -156,10 +159,32 @@ export function ScreeningTestPage() {
         earnedPoints: earned,
         answer: rawAns || "—",
         isCorrect,
+        correctOptionIndex: q.correctOptionIndex,
+        options: q.options,
       };
     });
 
-    const pctScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 100;
+    let finalDecision: "SHORTLISTED" | "ON_HOLD" = "SHORTLISTED";
+    let finalScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 100;
+    let finalReason = "Screening responses validated and shortlisted automatically.";
+
+    try {
+      const res = await fetch(`/api/t/${encodeURIComponent(tenant.slug)}/workflow/applications/${encodeURIComponent(appId)}/screening/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
+        body: JSON.stringify({ answers: detailedAnswers }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.evaluation) {
+          finalDecision = data.evaluation.decision === "ON_HOLD" ? "ON_HOLD" : "SHORTLISTED";
+          finalScore = typeof data.evaluation.score === "number" ? data.evaluation.score : finalScore;
+          finalReason = String(data.evaluation.reason || finalReason);
+        }
+      }
+    } catch {}
+
+    setEvalResult({ decision: finalDecision, score: finalScore, reason: finalReason });
     const nowIso = new Date().toISOString();
     const userEmail = me.data?.email?.toLowerCase();
 
@@ -175,8 +200,12 @@ export function ScreeningTestPage() {
             if (!matches) return a;
             return {
               ...a,
+              stage: finalDecision,
               screeningTestSubmitted: true,
-              screeningScore: pctScore,
+              screeningScore: finalScore,
+              screeningAiReason: finalReason,
+              holdReason: finalDecision === "ON_HOLD" ? finalReason : undefined,
+              notes: finalDecision === "ON_HOLD" ? `On Hold: ${finalReason}` : `Shortlisted automatically (${finalScore}/100). Slot booking link emailed.`,
               screeningAnswers: detailedAnswers,
               screeningSubmittedAt: nowIso,
             };
@@ -192,7 +221,7 @@ export function ScreeningTestPage() {
       if (Array.isArray(invites)) {
         const nextInvites = invites.map((inv: any) =>
           inv.appId === appId
-            ? { ...inv, status: "SUBMITTED", score: pctScore, answers: detailedAnswers, submittedAt: nowIso }
+            ? { ...inv, status: "SUBMITTED", score: finalScore, decision: finalDecision, reason: finalReason, answers: detailedAnswers, submittedAt: nowIso }
             : inv
         );
         localStorage.setItem("bh_screening_invites", JSON.stringify(nextInvites));
@@ -209,9 +238,9 @@ export function ScreeningTestPage() {
           jobTitle: overview.data?.job?.title,
           event: {
             id: `ev-screening-sub-${appId}-${Date.now()}`,
-            type: "screening_submitted",
+            type: finalDecision === "ON_HOLD" ? "on_hold" : "shortlisted",
             createdAt: nowIso,
-            data: { score: String(pctScore) },
+            data: { score: String(finalScore), reason: finalReason },
           },
         },
         ...(Array.isArray(list) ? list : []),
@@ -220,23 +249,35 @@ export function ScreeningTestPage() {
     } catch {}
 
     window.dispatchEvent(new Event("storage"));
-    window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId, screeningTestSubmitted: true } }));
+    window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId, stage: finalDecision, screeningTestSubmitted: true } }));
+    setEvaluating(false);
     setSubmitted(true);
   };
 
   if (submitted) {
+    const isHold = evalResult?.decision === "ON_HOLD";
     return (
       <section className="card mx-auto max-w-2xl flex flex-col items-center gap-4 p-8 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+        <span className={`flex h-12 w-12 items-center justify-center rounded-full ${isHold ? "bg-amber-100 text-amber-700" : "bg-teal-100 text-teal-700"}`}>
           <Check size={24} />
         </span>
-        <h1 className="text-2xl font-bold text-ink">Screening Test Submitted</h1>
+        <h1 className="text-2xl font-bold text-ink">
+          {isHold ? "Application Placed On Hold" : "Shortlisted! Screening Cleared"}
+        </h1>
         <p className="text-sm text-ink-muted max-w-md">
-          Thank you for completing the screening test. Our hiring team is reviewing your responses and will update your application status shortly.
+          {evalResult?.reason ||
+            "Thank you for completing the screening test. Our AI & hiring team have processed your responses."}
         </p>
-        <ButtonLink to={`/${tenant.slug}/applications/${appId}`} variant="primary">
-          Back to Application Overview →
-        </ButtonLink>
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+          {!isHold && (
+            <ButtonLink to={`/${tenant.slug}/applications/${appId}/interviews`} variant="primary">
+              Select Round 1 Time Slot →
+            </ButtonLink>
+          )}
+          <ButtonLink to={`/${tenant.slug}/applications/${appId}`} variant={isHold ? "primary" : "ghost"}>
+            Back to Application Overview →
+          </ButtonLink>
+        </div>
       </section>
     );
   }
@@ -337,8 +378,8 @@ export function ScreeningTestPage() {
         <Button type="button" variant="ghost" onClick={() => navigate(`/${tenant.slug}/applications/${appId}`)}>
           ← Back
         </Button>
-        <Button type="submit" variant="primary" size="lg">
-          Submit Screening Test →
+        <Button type="submit" variant="primary" size="lg" loading={evaluating}>
+          {evaluating ? "AI Evaluating Responses..." : "Submit Screening Test →"}
         </Button>
       </div>
     </form>

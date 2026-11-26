@@ -2,6 +2,7 @@ import { prisma } from "@verity/db";
 import { createServer } from "node:http";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
+import { processScheduledRound1Assessments } from "./services/automation.service.js";
 import { attachSocket } from "./services/realtime.service.js";
 import { logger } from "./utils/logger.js";
 
@@ -25,9 +26,15 @@ const sweep = setInterval(async () => {
   }
 }, 15 * 60_000);
 
+// Automation scheduler: 1-hour pre-slot Round 1 question generation & email dispatch (every 30s).
+const automationSweep = setInterval(() => {
+  void processScheduledRound1Assessments().catch((err) => logger.warn({ err }, "automation sweep failed"));
+}, 30_000);
+
 async function shutdown(signal: string) {
   logger.info({ signal }, "shutting down");
   clearInterval(sweep);
+  clearInterval(automationSweep);
   server.close();
   await prisma.$disconnect();
   process.exit(0);

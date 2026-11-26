@@ -47,6 +47,7 @@ import { generateJobDescription, generateJobDescriptionHtml } from "@/lib/jobGen
 import { JobDescriptionEditor } from "./JobDescriptionEditor";
 import { BrutallyScoreModule, getScreeningCutoffThreshold, getScreeningDeadlineDays, getStandardGlobalScreeningQuestions } from "./BrutallyScoreModule";
 import { AssessmentRoundsStudio, getSavedAssessmentRounds } from "./AssessmentRoundsStudio";
+import { RecruitmentWorkflowModule } from "./RecruitmentWorkflowModule";
 import { InterviewSlotsModule } from "./InterviewSlotsModule";
 import { InterviewsModule } from "./InterviewsModule";
 import { OfferModule } from "./OfferModule";
@@ -319,7 +320,7 @@ export function AdminDashboard() {
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "candidates" | "jobs" | "assessments" | "interviews" | "interviewSlots" | "brutallyScore" | "offers" | "onboarding" | "staff" | "settings"
+    "dashboard" | "candidates" | "jobs" | "workflow" | "assessments" | "interviews" | "interviewSlots" | "brutallyScore" | "offers" | "onboarding" | "staff" | "settings"
   >("dashboard");
   const [currentAdminRole, setCurrentAdminRole] = useState<"ADMIN" | "RECRUITER" | "INTERVIEWER">("ADMIN");
 
@@ -2020,47 +2021,72 @@ export function AdminDashboard() {
     setConfirmDialog({
       open: true,
       title: "Confirm Delete Candidate",
-      message: `Are you sure you want to permanently delete candidate "${app.candidateName || app.email}"? This application will be removed.`,
+      message: `Are you sure you want to permanently delete candidate "${app.candidateName || app.email}"? This application will be completely removed.`,
       actionType: "delete",
       confirmLabel: "Yes, Delete Candidate",
       onConfirm: () => {
         try {
+          // 1. Remove candidate from rejected list if present
           const rawRejected = localStorage.getItem("bh_rejected_applications");
-          const rejectedList = rawRejected ? JSON.parse(rawRejected) : [];
-          const nextRejected = [
-            {
-              id: app.id,
-              email: app.email,
-              candidateName: app.candidateName,
-              jobTitle: app.jobTitle,
-              submittedAt: app.submittedAt,
-              stage: "REJECTED",
-              rejectedAt: new Date().toISOString(),
-            },
-            ...(Array.isArray(rejectedList) ? rejectedList.filter((r: any) => r.id !== app.id) : []),
-          ];
-          localStorage.setItem("bh_rejected_applications", JSON.stringify(nextRejected));
-        } catch {}
-
-        try {
-          const draftRaw = localStorage.getItem(`bh_draft_${app.id}`);
-          if (draftRaw) {
-            const draft = JSON.parse(draftRaw);
-            draft.stage = "REJECTED";
-            localStorage.setItem(`bh_draft_${app.id}`, JSON.stringify(draft));
+          if (rawRejected) {
+            const rejectedList = JSON.parse(rawRejected);
+            if (Array.isArray(rejectedList)) {
+              const cleaned = rejectedList.filter(
+                (r: any) => r.id !== app.id && (!app.email || r.email?.toLowerCase() !== app.email.toLowerCase())
+              );
+              localStorage.setItem("bh_rejected_applications", JSON.stringify(cleaned));
+            }
           }
         } catch {}
 
+        try {
+          // 2. Remove draft and draft pointers for this candidate
+          localStorage.removeItem(`bh_draft_${app.id}`);
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith("bh_draft_") || key.startsWith("bh_resume_"))) {
+              const val = localStorage.getItem(key);
+              if (val && (val.includes(app.id) || (app.email && val.toLowerCase().includes(app.email.toLowerCase())))) {
+                keysToRemove.push(key);
+              }
+            }
+          }
+          keysToRemove.forEach((k) => localStorage.removeItem(k));
+        } catch {}
+
+        try {
+          // 3. Remove application events and notifications for this candidate
+          const rawEv = localStorage.getItem("bh_application_events");
+          if (rawEv) {
+            const evList = JSON.parse(rawEv);
+            if (Array.isArray(evList)) {
+              const cleanedEv = evList.filter(
+                (e: any) => e.appId !== app.id && (!app.email || e.email?.toLowerCase() !== app.email.toLowerCase())
+              );
+              localStorage.setItem("bh_application_events", JSON.stringify(cleanedEv));
+            }
+          }
+        } catch {}
+
+        // 4. Delete from backend DB if possible
+        try {
+          fetch(`/api/t/${encodeURIComponent(tenant.slug)}/applications/${encodeURIComponent(app.id)}`, {
+            method: "DELETE",
+            headers: { "x-verity-csrf": "1" },
+          }).catch(() => {});
+        } catch {}
+
+        // 5. Update applications list
         const updated = applications.filter((a) => a.id !== app.id);
         setApplications(updated);
         localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
-        recordCandidateStatusEvent(app, "REJECTED");
         window.dispatchEvent(new Event("storage"));
-        window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { stage: "REJECTED", appId: app.id } }));
+        window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { action: "DELETED", appId: app.id } }));
         if (activeReviewApp?.id === app.id) {
           setActiveReviewApp(null);
         }
-        showFeedback(`Candidate "${app.candidateName || app.email}" deleted.`);
+        showFeedback(`Candidate "${app.candidateName || app.email}" deleted successfully.`);
       },
     });
   };
@@ -2224,6 +2250,7 @@ export function AdminDashboard() {
               { id: "dashboard", label: "Dashboard", icon: <Dashboard size={18} /> },
               { id: "candidates", label: "Candidates", icon: <Users size={18} /> },
               { id: "jobs", label: "Jobs", icon: <Briefcase size={18} /> },
+              { id: "workflow", label: "AI 3-Round Workflow", icon: <Sparkle size={18} /> },
               { id: "assessments", label: "Assessments", icon: <Shield size={18} /> },
               { id: "interviews", label: "Interviews", icon: <Video size={18} /> },
               { id: "interviewSlots", label: "Interview Slots", icon: <Calendar size={18} /> },
@@ -2771,7 +2798,24 @@ export function AdminDashboard() {
                   </p>
                 )}
 
-                {activeReviewApp.stage === "IN_REVIEW" && (
+                {((activeReviewApp as any).holdReason || (activeReviewApp as any).screeningAiReason) && (
+                  <div
+                    className={`rounded-xl border p-3.5 text-xs ${
+                      activeReviewApp.stage === "ON_HOLD"
+                        ? "border-amber-300 bg-amber-50 text-amber-950"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-950"
+                    }`}
+                  >
+                    <strong className="block mb-1">
+                      {activeReviewApp.stage === "ON_HOLD"
+                        ? "AI Automated Evaluation: Placed ON HOLD (Reason)"
+                        : "AI Automated Evaluation: Shortlisted"}
+                    </strong>
+                    <p>{(activeReviewApp as any).holdReason || (activeReviewApp as any).screeningAiReason}</p>
+                  </div>
+                )}
+
+                {(activeReviewApp.stage === "IN_REVIEW" || activeReviewApp.stage === "ON_HOLD") && (
                   <div className="flex flex-wrap items-center justify-end gap-2 border-t border-blue-100 pt-3">
                     <Button
                       type="button"
@@ -2779,7 +2823,7 @@ export function AdminDashboard() {
                       onClick={() => void handleStageAdvance("SHORTLISTED", activeReviewApp)}
                       className="bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold"
                     >
-                      ✓ Approve & Set to Shortlisted
+                      {activeReviewApp.stage === "ON_HOLD" ? "Override Hold & Set to Shortlisted" : "✓ Approve & Set to Shortlisted"}
                     </Button>
                   </div>
                 )}
@@ -3432,6 +3476,15 @@ export function AdminDashboard() {
               </div>
             )}
           </div>
+        )}
+
+        {/* TAB 3B: END-TO-END 3-ROUND AI RECRUITMENT WORKFLOW */}
+        {activeTab === "workflow" && (
+          <RecruitmentWorkflowModule
+            tenantSlug={tenant.slug}
+            adminEmail={sessionStorage.getItem("admin_email") || "admin@brutallyhired.com"}
+            onFeedback={showFeedback}
+          />
         )}
 
         {/* TAB 4: ASSESSMENTS (Figure 4 Architecture) */}

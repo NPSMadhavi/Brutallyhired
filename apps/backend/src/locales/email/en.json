@@ -21,14 +21,49 @@
     "body": "A recruiter has started reviewing your application for {{jobTitle}}."
   },
   "assessment_invited": {
-    "subject": "Assessment ready — {{jobTitle}}",
-    "heading": "Your assessment is ready",
-    "body": "Please complete “{{assessmentTitle}}” for {{jobTitle}} before {{dueAt}}. It takes {{durationMinutes}} minutes once you start."
+    "subject": "Round 1 Assessment Ready — {{jobTitle}}",
+    "heading": "Your Round 1 Technical Assessment is ready",
+    "body": "Your scheduled Round 1 assessment “{{assessmentTitle}}” for {{jobTitle}} starts within 1 hour (before {{dueAt}}). Duration: {{durationMinutes}} minutes. Click below to complete your system check and start when your slot begins."
+  },
+  "screening_invited": {
+    "subject": "Action Required: Quick Screening Test — {{jobTitle}}",
+    "heading": "Complete your screening test",
+    "body": "Thank you for applying for {{jobTitle}}! Your application is now In Review. Please complete the short screening questionnaire in the candidate portal so our AI & hiring team can evaluate your fit."
+  },
+  "screening_on_hold": {
+    "subject": "Application Placed On Hold — {{jobTitle}}",
+    "heading": "Your application is currently on hold",
+    "body": "Thank you for completing the screening test for {{jobTitle}}. Our automated review placed your application on hold for the following reason:\n\n{{reason}}\n\nOur hiring team will review this if any updates are needed."
+  },
+  "slot_booking_invited": {
+    "subject": "Congratulations! Select Your Round 1 Time Slot — {{jobTitle}}",
+    "heading": "You’ve been shortlisted! Book your Round 1 slot",
+    "body": "Great news! You cleared the screening evaluation for {{jobTitle}} and have been shortlisted for Round 1. Please select your preferred Round 1 time slot in the portal. Your personalized technical questions will be generated and emailed 1 hour before your scheduled slot."
   },
   "assessment_submitted": {
     "subject": "Assessment received — {{jobTitle}}",
     "heading": "Assessment received",
     "body": "Thanks — your assessment for {{jobTitle}} has been submitted. The hiring team will review it."
+  },
+  "round2_invited": {
+    "subject": "Congratulations! Round 2 Technical Project Ready — {{jobTitle}}",
+    "heading": "You’re invited to Round 2: Technical Project Assessment",
+    "body": "Great news! You’ve passed Round 1 for {{jobTitle}}. Your personalized Round 2 technical project “{{projectTitle}}” is now ready in the candidate portal. Scheduled window: {{slotWindow}}. Duration: {{durationMinutes}} minutes."
+  },
+  "round2_passed": {
+    "subject": "Congratulations! You Passed Round 2 — {{jobTitle}}",
+    "heading": "Congratulations — Round 2 Cleared!",
+    "body": "We’re thrilled to let you know that HR has approved your Round 2 technical project for {{jobTitle}}. You are advancing to Round 3 (HR Interview). We will notify you as soon as your interview slot is ready."
+  },
+  "round2_rejected": {
+    "subject": "Application Update — Round 2 ({{jobTitle}})",
+    "heading": "Update on your Round 2 assessment",
+    "body": "Thank you for completing the Round 2 technical project for {{jobTitle}}. After careful review of your submission, the hiring team has decided not to move forward to the next round at this time."
+  },
+  "round3_invited": {
+    "subject": "Round 3 HR Interview Invitation — {{jobTitle}}",
+    "heading": "You’re invited to Round 3: Final HR Interview",
+    "body": "Your Round 3 proctored HR interview for {{jobTitle}} is ready. Scheduled time: {{slotWindow}}. Please join through the candidate portal and complete the quick system check before starting."
   },
   "interview_invited": {
     "subject": "Please book your interview — {{jobTitle}}",

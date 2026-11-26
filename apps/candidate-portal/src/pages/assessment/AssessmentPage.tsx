@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { getSavedAssessmentRounds } from "../admin/AssessmentRoundsStudio";
 import { AssessmentRunner } from "./AssessmentRunner";
+import { Round2ProjectWorkspace, type Round2ProjectDto } from "./Round2ProjectWorkspace";
 
 function CheckLine({ icon, label, state }: { icon: React.ReactNode; label: string; state: CheckState }) {
   const { t } = useTranslation();
@@ -96,6 +97,11 @@ export function AssessmentPage() {
   const start = useStartAttempt(tenant.slug, inviteId);
   const proctor = useProctoring(tenant.slug);
   const [attempt, setAttempt] = useState<AttemptDto | null>(null);
+  const [round2Project, setRound2Project] = useState<Round2ProjectDto | null>(null);
+  const [round2Started, setRound2Started] = useState(false);
+  const [round2AiReport, setRound2AiReport] = useState<any>(null);
+  const [round1DbInvite, setRound1DbInvite] = useState<any>(null);
+  const [finalScore, setFinalScore] = useState<number | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [done, setDone] = useState(false);
   const [systemVerified, setSystemVerified] = useState(false);
@@ -108,6 +114,36 @@ export function AssessmentPage() {
   const [assessmentMode, setAssessmentMode] = useState<"STANDARD" | "HIGHER_ASSURANCE">("HIGHER_ASSURANCE");
   const video = useRef<HTMLVideoElement>(null);
   const [online, setOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    if (!appId) return;
+    if (isRound2) {
+      fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round2`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.project) {
+            setRound2Project(data.project);
+            if (data.project.status === "SUBMITTED" || data.project.status === "AI_EVALUATION_COMPLETED" || data.project.status === "PASSED" || data.project.status === "REJECTED") {
+              setRound2AiReport(data.project.aiReport || null);
+              setDone(true);
+            }
+          }
+        })
+        .catch(() => undefined);
+    } else {
+      fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round1`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.invite) {
+            setRound1DbInvite(data.invite);
+            if (data.invite.status === "SUBMITTED") {
+              setFinalScore(typeof data.invite.attempt?.autoScore === "number" ? data.invite.attempt.autoScore : null);
+            }
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, [appId, isRound2, tenant.slug]);
 
   useEffect(() => {
     // Check local port & hardware monitor service on port 4899
@@ -142,25 +178,49 @@ export function AssessmentPage() {
 
   const fallbackInv: AssessmentInviteDto = {
     id: inviteId || (isRound2 ? "assess-round-2" : "assess-1"),
-    title: isRound2 ? "Technical Assessment" : configuredRound?.name || "Technical Assessment",
+    title: isRound2 && round2Project
+      ? `Round 2: ${round2Project.taskSpec.title}`
+      : round1DbInvite?.template?.title || (isRound2 ? "Round 2: Technical Project Assessment" : configuredRound?.name || "Technical Assessment"),
     description:
-      configuredRound?.description ||
-      "Technical multiple-choice questions evaluated for foundational concepts, architecture, and syntax.",
-    durationMinutes: configuredRound?.durationMinutes || 45,
+      isRound2 && round2Project
+        ? round2Project.taskSpec.description
+        : round1DbInvite?.template?.description ||
+          configuredRound?.description ||
+          "Technical multiple-choice questions evaluated for foundational concepts, architecture, and syntax.",
+    durationMinutes:
+      isRound2 && round2Project
+        ? round2Project.durationMinutes
+        : round1DbInvite?.template?.durationMinutes || configuredRound?.durationMinutes || 45,
     proctored: true,
-    topics: [
-      "Architecture & Memory",
-      "Database Isolation",
-      "Algorithms & Caching",
-      "Proctoring Telemetry",
-    ],
-    questionCount: 5,
-    dueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "INVITED",
+    topics:
+      isRound2 && round2Project
+        ? round2Project.taskSpec.requiredTechnologies
+        : round1DbInvite?.template?.topics || [
+            "Architecture & Memory",
+            "Database Isolation",
+            "Algorithms & Caching",
+            "Proctoring Telemetry",
+          ],
+    questionCount:
+      isRound2 && round2Project
+        ? round2Project.taskSpec.functionalRequirements?.length || 4
+        : round1DbInvite?.template?.questions?.length || configuredRound?.mcqQuestions?.length || 5,
+    dueAt:
+      (isRound2 && round2Project?.dueAt) ||
+      round1DbInvite?.dueAt ||
+      new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    status:
+      isRound2 && round2Project
+        ? round2Project.status === "IN_PROGRESS"
+          ? "IN_PROGRESS"
+          : round2Project.submittedAt
+          ? "SUBMITTED"
+          : "INVITED"
+        : round1DbInvite?.status || "INVITED",
     attempt: null,
   };
 
-  const inv = q.data || fallbackInv;
+  const inv = (isRound2 && round2Project) ? fallbackInv : (q.data || fallbackInv);
 
   const back = (
     <Link to={`/${tenant.slug}/applications/${appId}/interviews`} className="inline-flex items-center gap-1 text-sm font-semibold no-underline text-brand hover:text-brand-hover">
@@ -169,25 +229,20 @@ export function AssessmentPage() {
     </Link>
   );
 
-  const handleExamDone = async () => {
+  const handleExamDone = async (result?: { autoScore?: number; disqualified?: boolean }) => {
+    const computedScore = typeof result?.autoScore === "number" ? result.autoScore : undefined;
+    if (computedScore !== undefined) setFinalScore(computedScore);
     setDone(true);
     try {
       const rawApps = localStorage.getItem("bh_admin_applications");
-      let candidateEmail = "rahul.sharma@example.com";
-      let candidateName = "Candidate";
-      let jobTitle = "Software Developer";
+      let candidateEmail = candidateApp?.email || "candidate@brutallyhired.com";
+      let candidateName = candidateApp?.candidateName || "Candidate";
+      let jobTitle = candidateApp?.jobTitle || "Software Developer";
       if (rawApps) {
         const parsed = JSON.parse(rawApps);
         if (Array.isArray(parsed)) {
           const updated = parsed.map((a: any) => {
-            if (
-              a.id === appId ||
-              a.stage === "SHORTLISTED" ||
-              a.stage === "ASSESSMENT" ||
-              a.stage === "TEST_SUBMITTED" ||
-              a.stage === "ROUND_1_PASSED" ||
-              a.stage === "INTERVIEW"
-            ) {
+            if (a.id === appId) {
               candidateEmail = a.email || candidateEmail;
               candidateName = a.candidateName || candidateName;
               jobTitle = a.jobTitle || jobTitle;
@@ -195,20 +250,17 @@ export function AssessmentPage() {
                 return {
                   ...a,
                   round2Submitted: true,
-                  round2Passed: true,
-                  round3Unlocked: true,
                   round2SubmittedAt: new Date().toISOString(),
-                  score: Math.max(a.score || 0, 96),
-                  notes: "Round 2 Technical Assessment submitted by candidate. Ready for HR review.",
+                  notes: "Round 2 Technical Project submitted & AI evaluated. Pending HR final decision.",
                 };
               }
               return {
                 ...a,
-                stage: "TEST_SUBMITTED",
+                stage: result?.disqualified ? "REJECTED" : "TEST_SUBMITTED",
                 round1Submitted: true,
                 testSubmittedAt: new Date().toISOString(),
-                score: Math.max(a.score || 0, 94),
-                notes: "Practical Assessment submitted by candidate. Ready for HR review.",
+                score: computedScore !== undefined ? computedScore : a.score,
+                notes: "Round 1 Assessment submitted by candidate. Ready for HR review.",
               };
             }
             return a;
@@ -367,8 +419,18 @@ export function AssessmentPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-lg text-left">
             <div className="rounded-xl border border-line bg-canvas p-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">AI Score</span>
-              <span className="text-xl font-bold text-teal-700">{isRound2 ? "96" : "94"} / 100</span>
-              <span className="text-[11px] text-teal-800 block">Score Verified (Threshold 75)</span>
+              <span className="text-xl font-bold text-teal-700">
+                {isRound2
+                  ? round2AiReport?.overallScore !== undefined
+                    ? `${round2AiReport.overallScore} / ${round2AiReport.maxScore || 100}`
+                    : "AI Evaluated"
+                  : finalScore !== null
+                  ? `${finalScore} / 100`
+                  : "Submitted"}
+              </span>
+              <span className="text-[11px] text-teal-800 block">
+                {isRound2 ? "Pending HR Final Decision" : "Score Recorded for HR Review"}
+              </span>
             </div>
             <div className="rounded-xl border border-line bg-canvas p-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block">Proctoring Telemetry</span>
@@ -409,17 +471,35 @@ export function AssessmentPage() {
     );
   }
 
+  if (isRound2 && round2Started && round2Project) {
+    return (
+      <Round2ProjectWorkspace
+        project={round2Project}
+        appId={appId}
+        candidateName={candidateApp?.candidateName || "Candidate"}
+        candidateEmail={candidateApp?.email || ""}
+        jobTitle={candidateApp?.jobTitle || "Software Developer"}
+        proctor={proctor}
+        portMonitorOnline={portMonitorStatus.connected}
+        onSubmitted={(res) => {
+          setRound2AiReport(res.aiReport || null);
+          void handleExamDone({ autoScore: res.aiReport?.overallScore });
+        }}
+      />
+    );
+  }
+
   if (attempt) {
     return (
       <AssessmentRunner
         attempt={attempt}
         proctor={proctor}
         candidateId={candidateApp?.id || appId}
-        candidateName={candidateApp?.candidateName || "praveen Nobi"}
-        candidateEmail={candidateApp?.email || "netopsysai@gmail.com"}
-        jobTitle={candidateApp?.jobTitle || "Ai Ml"}
+        candidateName={candidateApp?.candidateName || "Candidate"}
+        candidateEmail={candidateApp?.email || ""}
+        jobTitle={candidateApp?.jobTitle || "Software Developer"}
         portMonitorOnline={portMonitorStatus.connected}
-        onDone={() => void handleExamDone()}
+        onDone={(res) => void handleExamDone(res)}
       />
     );
   }
@@ -444,10 +524,35 @@ export function AssessmentPage() {
 
   const begin = async () => {
     if (inv.proctored) await document.documentElement.requestFullscreen().catch(() => undefined);
-    
-    // 1. Prioritize questions configured and approved by HR in Assessment Studio
+
+    // If Round 2 has a DB-backed AI Technical Project, start it and launch the Round 2 Project Workspace
+    if (isRound2 && round2Project) {
+      try {
+        const res = await fetch(`/api/t/${tenant.slug}/workflow/applications/${appId}/round2/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.project) setRound2Project(data.project);
+        }
+      } catch {}
+      if (inv.proctored) proctor.start(round2Project.id);
+      setRound2Started(true);
+      return;
+    }
+
+    // 1. Prioritize DB-backed Round 1 invite questions, then HR-configured Studio questions
     let assessmentQuestions: any[] = [];
-    if (configuredRound?.mcqQuestions && configuredRound.mcqQuestions.length > 0) {
+    if (!isRound2 && round1DbInvite?.template?.questions?.length > 0) {
+      assessmentQuestions = round1DbInvite.template.questions.map((q: any, idx: number) => ({
+        id: q.id || `q-${idx + 1}`,
+        order: q.order || idx + 1,
+        type: q.type || ("SINGLE_CHOICE" as const),
+        prompt: String(q.prompt || "").replace(/^\[.*?\]\s*/, ""),
+        options: Array.isArray(q.options) ? q.options : [],
+      }));
+    } else if (configuredRound?.mcqQuestions && configuredRound.mcqQuestions.length > 0) {
       assessmentQuestions = configuredRound.mcqQuestions.map((q, idx) => ({
         id: q.id || `q-${idx + 1}`,
         order: idx + 1,
