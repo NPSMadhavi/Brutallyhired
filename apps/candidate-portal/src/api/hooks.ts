@@ -95,6 +95,14 @@ export const useJob = (slug: string, ref: string) =>
     retry: false,
   });
 
+export const useJobs = (slug: string) =>
+  useQuery({
+    queryKey: ["jobs", slug],
+    queryFn: () => api<JobPublic[]>(tp(slug, "/jobs")),
+    enabled: Boolean(slug),
+    staleTime: 30_000,
+  });
+
 // ── Profile ─────────────────────────
 
 export interface ProfileResumeDto {

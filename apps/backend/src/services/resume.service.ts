@@ -3,7 +3,7 @@ import { type ResumeSummary } from "@verity/shared";
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
 import { logger } from "../utils/logger.js";
-import { extractAndSummariseResume } from "./ai.service.js";
+import { extractAndSummariseResume, extractHeuristicResume } from "./ai.service.js";
 import { storage } from "./storage.service.js";
 
 const MAX_CHARS = 30_000;
@@ -54,21 +54,55 @@ export async function readResumeForApplication(applicationId: string, fileId: st
   try {
     const file = await prisma.fileObject.findUniqueOrThrow({ where: { id: fileId } });
     const text = await extractResumeText(file.storageKey, file.mimeType);
-    const summary = text ? await summariseResume(text) : null;
     const current = await prisma.application.findUnique({ where: { id: applicationId }, select: { resumeFileId: true } });
     if (current?.resumeFileId !== fileId) return; // a newer upload replaced this one
+
+    if (!text) {
+      await prisma.application.update({
+        where: { id: applicationId },
+        data: { resumeText: null, resumeReadStatus: "UNAVAILABLE" },
+      });
+      onDone();
+      return;
+    }
+
+    // 1. Instant heuristic summary (<10ms) so the candidate never waits on "Reading your CV..."
+    const instantSummary = extractHeuristicResume(text);
     await prisma.application.update({
       where: { id: applicationId },
       data: {
         resumeText: text,
-        resumeSummary: (summary ?? undefined) as Prisma.InputJsonValue | undefined,
-        resumeReadStatus: summary ? "READ" : "UNAVAILABLE",
+        resumeSummary: instantSummary as Prisma.InputJsonValue,
+        resumeReadStatus: "READ",
       },
     });
+    onDone();
+
+    // 2. Non-blocking AI enrichment via local Ollama (qwen3.5:9b) in the background
+    void (async () => {
+      try {
+        const aiSummary = await summariseResume(text);
+        if (!aiSummary) return;
+        const stillCurrent = await prisma.application.findUnique({
+          where: { id: applicationId },
+          select: { resumeFileId: true },
+        });
+        if (stillCurrent?.resumeFileId !== fileId) return;
+        await prisma.application.update({
+          where: { id: applicationId },
+          data: {
+            resumeSummary: aiSummary as Prisma.InputJsonValue,
+            resumeReadStatus: "READ",
+          },
+        });
+        onDone();
+      } catch (aiErr) {
+        logger.debug({ aiErr, applicationId }, "background AI resume enrichment skipped");
+      }
+    })();
   } catch (err) {
     logger.error({ err, applicationId }, "resume read failed");
     await prisma.application.update({ where: { id: applicationId }, data: { resumeReadStatus: "UNAVAILABLE" } }).catch(() => undefined);
-  } finally {
     onDone();
   }
 }

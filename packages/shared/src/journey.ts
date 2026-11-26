@@ -9,10 +9,13 @@ export function milestoneForStage(stage: ApplicationStageKey | string): Mileston
     case "IN_REVIEW":
       return "IN_REVIEW";
     case "ASSESSMENT":
+    case "ROUND1_PENDING_HR_APPROVAL":
       return "SCREENING_TEST";
     case "SHORTLISTED":
       return "SHORTLISTED";
+    case "ROUND2_PENDING_HR_APPROVAL":
     case "INTERVIEW":
+    case "ROUND3_PENDING_FINAL_HR_APPROVAL":
       return "INTERVIEW_SCHEDULE";
     case "OFFER":
       return "OFFER";

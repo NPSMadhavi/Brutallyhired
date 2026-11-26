@@ -22,9 +22,18 @@ export function ApplyEntry() {
     // Check if we already have an active application draft for this role
     const draftKey = `bh_draft_${tenant.slug}_${jobRef}`;
     const savedAppId = localStorage.getItem(draftKey);
-    if (savedAppId && localStorage.getItem(`bh_draft_${savedAppId}`)) {
-      navigate(`/${tenant.slug}/applications/${savedAppId}/apply/details`, { replace: true });
-      return;
+    if (savedAppId) {
+      const savedDraftRaw = localStorage.getItem(`bh_draft_${savedAppId}`);
+      if (savedDraftRaw) {
+        try {
+          const draft = JSON.parse(savedDraftRaw);
+          if (draft && draft.stage === "DRAFT") {
+            navigate(`/${tenant.slug}/applications/${savedAppId}/apply/details`, { replace: true });
+            return;
+          }
+        } catch {}
+      }
+      localStorage.removeItem(draftKey);
     }
 
     start.mutate(jobRef, {

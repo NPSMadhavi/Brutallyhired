@@ -104,22 +104,43 @@ export function NotificationsPage() {
     } catch {}
   };
 
+  const clearAllNotifications = () => {
+    try {
+      localStorage.removeItem("bh_application_events");
+      localStorage.removeItem("bh_read_notifications");
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { action: "CLEARED" } }));
+      setVersion((v) => v + 1);
+    } catch {}
+  };
+
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-[32px]">{t("notifications.title")}</h1>
-        {unread > 0 && (
-          <Button
-            variant="text"
-            loading={markAll.isPending}
-            onClick={() => {
-              markAllLocalRead();
-              markAll.mutate();
-            }}
-          >
-            {t("notifications.markAll")}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {unread > 0 && (
+            <Button
+              variant="text"
+              loading={markAll.isPending}
+              onClick={() => {
+                markAllLocalRead();
+                markAll.mutate();
+              }}
+            >
+              {t("notifications.markAll")}
+            </Button>
+          )}
+          {items.length > 0 && (
+            <button
+              type="button"
+              className="rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:border-danger/30 hover:bg-danger-soft hover:text-danger transition-colors"
+              onClick={clearAllNotifications}
+            >
+              Clear All Notifications
+            </button>
+          )}
+        </div>
       </div>
       {items.length === 0 ? (
         <EmptyState icon={<Bell size={26} />} title={t("notifications.empty")} />

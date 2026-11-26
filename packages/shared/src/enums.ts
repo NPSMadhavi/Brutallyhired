@@ -11,10 +11,10 @@ export const NOTICE_PERIODS = ["IMMEDIATE", "D15", "D30", "D60", "D90", "OVER_90
 export type NoticePeriodKey = (typeof NOTICE_PERIODS)[number];
 
 export const APPLICATION_STAGES = [
-  "DRAFT", "SUBMITTED", "IN_REVIEW", "ASSESSMENT", "INTERVIEW", "OFFER", "ONBOARDING", "HIRED", "NOT_SELECTED", "WITHDRAWN",
+  "DRAFT", "SUBMITTED", "IN_REVIEW", "SHORTLISTED", "ON_HOLD", "ASSESSMENT", "ROUND1_PENDING_HR_APPROVAL", "ROUND2_PENDING_HR_APPROVAL", "INTERVIEW", "ROUND3_PENDING_FINAL_HR_APPROVAL", "OFFER", "ONBOARDING", "HIRED", "REJECTED", "NOT_SELECTED", "WITHDRAWN",
 ] as const;
 export type ApplicationStageKey = (typeof APPLICATION_STAGES)[number];
-export const CLOSED_STAGES: readonly ApplicationStageKey[] = ["NOT_SELECTED", "WITHDRAWN"];
+export const CLOSED_STAGES: readonly ApplicationStageKey[] = ["REJECTED", "NOT_SELECTED", "WITHDRAWN"];
 
 export const QUESTION_TYPES = ["TEXT", "SINGLE_CHOICE", "NUMBER"] as const;
 export type QuestionTypeKey = (typeof QUESTION_TYPES)[number];

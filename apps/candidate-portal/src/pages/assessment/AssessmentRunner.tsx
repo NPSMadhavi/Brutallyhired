@@ -33,7 +33,7 @@ export function AssessmentRunner({
   portMonitorOnline = false,
 }: {
   attempt: AttemptDto;
-  onDone: () => void;
+  onDone: (result?: { autoScore?: number; disqualified?: boolean }) => void;
   proctor: ReturnType<typeof useProctoring>;
   candidateId?: string;
   candidateName?: string;
@@ -48,7 +48,7 @@ export function AssessmentRunner({
   const [answers, setAnswers] = useState(attempt.answers);
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  
+
   // Calculate remaining seconds reliably:
   // attempt.serverNow might be missing or out of sync; compare deadline to Date.now()
   // Ensure default duration of at least 45 minutes if deadline is invalid or past
@@ -59,7 +59,7 @@ export function AssessmentRunner({
       if (!isNaN(dl) && dl > now) {
         return Math.max(0, Math.floor((dl - now) / 1000));
       }
-    } catch {}
+    } catch { }
     return 45 * 60; // 45 minutes default in seconds
   });
   const pending = useRef<Record<string, number[] | string>>({});
@@ -74,7 +74,7 @@ export function AssessmentRunner({
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return parsed;
       }
-    } catch {}
+    } catch { }
     return [];
   });
   const [isDisqualified, setIsDisqualified] = useState(() => violationReports.length >= 5);
@@ -192,45 +192,9 @@ export function AssessmentRunner({
           }),
         }).catch(() => undefined);
 
-        // 5-VIOLATION AUTO-REJECTION RULE
+        // Record 5th proctoring alert as reviewable evidence for HR (never auto-rejects)
         if (newIncidentNum >= 5) {
-          finished.current = true;
-          setIsDisqualified(true);
-          if (document.fullscreenElement) {
-            void document.exitFullscreen().catch(() => undefined);
-          }
-
-          // Disqualify candidate in localStorage bh_admin_applications
-          try {
-            const rawApps = localStorage.getItem("bh_admin_applications");
-            if (rawApps) {
-              const apps = JSON.parse(rawApps);
-              const updatedApps = apps.map((a: any) => {
-                if (a.id === candidateId || a.candidateName === candidateName || a.email === candidateEmail) {
-                  return {
-                    ...a,
-                    stage: "REJECTED",
-                    rejectionReason:
-                      "Automatic Disqualification: 5 Critical Examination Proctoring Integrity Violations Recorded",
-                  };
-                }
-                return a;
-              });
-              localStorage.setItem("bh_admin_applications", JSON.stringify(updatedApps));
-            }
-          } catch {}
-
-          // Send disqualification notice email
-          void sendEmailNotification({
-            to: candidateEmail,
-            recipientName: candidateName,
-            stage: "REJECTED",
-            jobTitle,
-            portalPath: `/${tenant.slug}/applications/${candidateId}`,
-            tenantSlug: tenant.slug,
-            customHeading: "BrutalAssessAI™ Notice: Assessment Terminated & Disqualified",
-            customBody: `Your proctored examination for ${jobTitle} has been automatically terminated due to reaching the maximum threshold of 5 security and proctoring violations. BrutalAssessAI™ verified multiple unauthorized events during your session. As per exam integrity regulations, your candidacy has been marked as Disqualified.`,
-          });
+          setIsDisqualified(false);
         }
 
         return updated;
@@ -326,9 +290,26 @@ export function AssessmentRunner({
     await flushAnswers();
     await proctor.stop();
     await submit.mutateAsync().catch(() => undefined);
+    let autoScore: number | undefined;
+    try {
+      const res = await fetch(`/api/t/${tenant.slug}/workflow/applications/${candidateId}/round1/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
+        body: JSON.stringify({
+          answers,
+          proctoringReports: violationReports,
+          disqualified: isDisqualified,
+          questionsSnapshot: attempt.questions,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.autoScore === "number") autoScore = data.autoScore;
+      }
+    } catch { }
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
-    onDone();
-  }, [flushAnswers, onDone, proctor, submit]);
+    onDone({ autoScore, disqualified: isDisqualified });
+  }, [answers, attempt.questions, candidateId, flushAnswers, isDisqualified, onDone, proctor, violationReports, submit, tenant.slug]);
 
   useEffect(() => {
     if (isDisqualified) return;
@@ -454,8 +435,8 @@ export function AssessmentRunner({
               violationReports.length === 0
                 ? "bg-teal-500/20 text-teal-300 border border-teal-500/40"
                 : violationReports.length >= 4
-                ? "bg-rose-500/30 text-rose-200 border border-rose-500 animate-pulse"
-                : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                  ? "bg-rose-500/30 text-rose-200 border border-rose-500 animate-pulse"
+                  : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
             )}
           >
             <Shield size={14} />

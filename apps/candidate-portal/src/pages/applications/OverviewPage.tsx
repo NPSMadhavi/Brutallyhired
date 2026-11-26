@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useMe, useOverview, useProfile, useWithdraw } from "@/api/hooks";
 import { JourneyTrack } from "@/components/journey/JourneyTrack";
 import { Updates } from "@/components/journey/Updates";
@@ -8,7 +8,7 @@ import { useTenantCtx } from "@/components/layout/TenantContext";
 import { Button, ButtonAnchor } from "@/components/ui/Button";
 import { CheckRow, Pill } from "@/components/ui/Card";
 import { ErrorState, InlineError, PageLoader } from "@/components/ui/feedback";
-import { Check, Lock, Mail } from "@/components/ui/icons";
+import { Arrow, Calendar, Check, Clock, File, Lock, Mail } from "@/components/ui/icons";
 import { Avatar } from "@/components/ui/misc";
 import { useFormat } from "@/lib/format";
 import { stageTone } from "./stageTone";
@@ -154,7 +154,39 @@ export function OverviewPage() {
   const [version, setVersion] = useState(0);
 
   const [selectedR1SlotId, setSelectedR1SlotId] = useState<string>("");
+  const [selectedR1Date, setSelectedR1Date] = useState<string>("");
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  const [serverR1Slots, setServerR1Slots] = useState<Array<{ id: string; label: string; isoStart: string; date?: string; startTime?: string; endTime?: string }>>([]);
+
+  useEffect(() => {
+    fetch(`/api/t/${encodeURIComponent(tenant.slug)}/interview-slots`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.slots && Array.isArray(data.slots)) {
+          const now = Date.now();
+          const mapped = data.slots
+            .filter((s: any) => s.roundNumber === 1 && s.status === "AVAILABLE")
+            .map((s: any) => {
+              const isoStart = s.date && s.startTime ? `${s.date}T${s.startTime}:00` : new Date().toISOString();
+              return {
+                id: s.id,
+                label: `${s.date} · ${s.startTime} - ${s.endTime}`,
+                isoStart,
+                date: s.date,
+                startTime: s.startTime,
+                endTime: s.endTime,
+              };
+            })
+            .filter((s: any) => {
+              const t = new Date(s.isoStart).getTime();
+              return Number.isFinite(t) && t > now - 15 * 60 * 1000;
+            })
+            .sort((a: any, b: any) => (a.isoStart || "").localeCompare(b.isoStart || ""));
+          setServerR1Slots(mapped);
+        }
+      })
+      .catch(() => {});
+  }, [tenant.slug]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTs(Date.now()), 15000);
@@ -240,18 +272,12 @@ export function OverviewPage() {
     WITHDRAWN: 99,
   };
 
-  const deletedFromAdmin =
-    adminListPresent &&
-    !matchingApp &&
-    (o?.stage || draftParsed.stage) &&
-    (o?.stage || draftParsed.stage) !== "DRAFT";
-
   const localStage =
-    rejectedMatch || deletedFromAdmin
+    rejectedMatch
       ? "REJECTED"
       : (matchingApp?.stage || draftParsed.stage || null);
   let effectiveStage: string = o?.stage || "SUBMITTED";
-  if (rejectedMatch || deletedFromAdmin) {
+  if (rejectedMatch) {
     effectiveStage = "REJECTED";
   } else if (matchingApp?.stage) {
     // Admin stage in bh_admin_applications is authoritative (supports forward and backward changes)
@@ -419,7 +445,29 @@ export function OverviewPage() {
 
   if (q.isPending && !o) return <PageLoader />;
   if (q.isError && !o) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
-  if (!o) return <PageLoader />;
+  if (!o) {
+    return (
+      <div className="space-y-6 py-10">
+        <div className="card mx-auto flex max-w-lg flex-col items-center justify-center p-8 text-center">
+          <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-line-soft text-ink-muted">
+            <File size={24} />
+          </div>
+          <h2 className="text-xl font-bold text-ink">Application Not Found</h2>
+          <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+            This application record does not exist or has been removed. You can browse active job openings and submit a fresh application.
+          </p>
+          <div className="mt-6">
+            <Link
+              to={`/${tenant.slug}/applications`}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white no-underline hover:bg-ink-2 shadow-sm"
+            >
+              Browse Open Positions <Arrow size={14} className="text-white" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const base = `/${tenant.slug}/applications/${o.id}`;
   let candidateNameFallback = "";
   if (!me.data?.displayName && !profile.data?.profile?.firstName) {
@@ -498,28 +546,53 @@ export function OverviewPage() {
         )}
 
         {o.closed && (
-          <div className="rounded-2xl border border-line bg-canvas p-5 space-y-1">
-            <h3 className="text-base font-bold text-ink">
-              {(o.stage as string) === "REJECTED"
-                ? "Application rejected"
-                : o.stage === "WITHDRAWN"
-                ? "You withdrew this application"
-                : "This application is closed"}
-            </h3>
-            <p className="text-xs text-ink-muted">
-              {(o.stage as string) === "REJECTED"
-                ? "Thank you for applying. Unfortunately, your application was not selected to move forward."
-                : "This application is closed. Thank you for your interest."}
+          <div className="rounded-2xl border border-line bg-canvas p-6 space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-ink">
+                {(o.stage as string) === "REJECTED"
+                  ? "Application rejected"
+                  : o.stage === "WITHDRAWN"
+                  ? "You withdrew this application"
+                  : "This application is closed"}
+              </h3>
+              <p className="text-xs text-ink-muted mt-1 leading-relaxed">
+                {(o.stage as string) === "REJECTED"
+                  ? "Thank you for applying. Unfortunately, your application was not selected to move forward."
+                  : "This application is closed. Thank you for your interest."}
+              </p>
+            </div>
+            <div className="border-t border-line-soft pt-3 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs text-ink-muted">Ready to explore other opportunities with {tenant.name}?</span>
+              <Link
+                to={`/${tenant.slug}/applications`}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-ink px-3.5 py-1.5 text-xs font-semibold text-white no-underline hover:bg-ink-2 shadow-sm"
+              >
+                Explore Open Positions & Apply <Arrow size={13} className="text-white" />
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {!o.closed && (o.stage as string) === "ON_HOLD" && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-base font-bold text-amber-950">Application Placed On Hold</h3>
+              <span className="rounded-full bg-amber-200/80 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">ON HOLD</span>
+            </div>
+            <p className="text-xs text-amber-900 leading-relaxed">
+              {matchingApp?.holdReason ||
+                matchingApp?.screeningAiReason ||
+                "Your screening responses require further review and your application has been placed on hold."}
             </p>
           </div>
         )}
 
-        {!o.closed && o.stage === "IN_REVIEW" && matchingApp?.screeningTestSent && !matchingApp?.screeningTestSubmitted && (
+        {!o.closed && o.stage === "IN_REVIEW" && !matchingApp?.screeningTestSubmitted && (
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/40 p-5">
             <div className="space-y-1">
               <h3 className="text-base font-bold text-ink">Screening Test Ready</h3>
               <p className="text-xs text-ink-muted">
-                Complete your screening test questions configured by the hiring team.
+                Complete your screening test questions. Our AI will evaluate your responses automatically.
               </p>
             </div>
             <ButtonAnchor href={`/${tenant.slug}/applications/${appId}/screening`} variant="primary">
@@ -553,120 +626,299 @@ export function OverviewPage() {
         )}
 
         {/* Round 1 Slot Selection & 10-minute Assessment Unlock when Shortlisted / Interview Scheduled */}
-        {!o.closed && ((o.stage as string) === "SHORTLISTED" || (o.stage as string) === "INTERVIEW_SCHEDULED") && matchingApp?.round1SlotsSent && Array.isArray(matchingApp?.round1Slots) && matchingApp.round1Slots.length > 0 && (
+        {!o.closed && ((o.stage as string) === "SHORTLISTED" || (o.stage as string) === "INTERVIEW_SCHEDULED") && (() => {
+          const rawSlots: Array<{ id: string; label: string; isoStart: string; date?: string; startTime?: string; endTime?: string }> =
+            Array.isArray(matchingApp?.round1Slots) && matchingApp.round1Slots.length > 0
+              ? matchingApp.round1Slots
+              : serverR1Slots;
+
+          // Filter out past slots and sort chronologically ascending
+          const availableR1Slots = rawSlots
+            .filter((s) => {
+              const iso = s.isoStart || (s.date && s.startTime ? `${s.date}T${s.startTime}:00` : "");
+              if (!iso) return false;
+              const t = new Date(iso).getTime();
+              return Number.isFinite(t) && t > nowTs - 15 * 60 * 1000;
+            })
+            .sort((a, b) => {
+              const aIso = a.isoStart || `${a.date}T${a.startTime}:00`;
+              const bIso = b.isoStart || `${b.date}T${b.startTime}:00`;
+              return aIso.localeCompare(bIso);
+            });
+
+          if (!matchingApp?.round1BookedSlot && availableR1Slots.length === 0) return null;
+
+          // Group by Date YYYY-MM-DD
+          const dateMap: { [dateStr: string]: typeof availableR1Slots } = {};
+          for (const slot of availableR1Slots) {
+            const dStr = slot.date || (slot.isoStart ? slot.isoStart.slice(0, 10) : "");
+            if (!dStr) continue;
+            if (!dateMap[dStr]) dateMap[dStr] = [];
+            dateMap[dStr].push(slot);
+          }
+          const sortedDates = Object.keys(dateMap).sort();
+          const activeDate = (selectedR1Date && sortedDates.includes(selectedR1Date))
+            ? selectedR1Date
+            : sortedDates[0] || "";
+          const activeSlots = activeDate ? (dateMap[activeDate] || []) : [];
+
+          const formatSlotDate = (dStr: string) => {
+            const rawParts = dStr.split("-");
+            if (rawParts.length !== 3) return { weekday: "", day: dStr, full: dStr, isToday: false, isTomorrow: false };
+            const y = Number(rawParts[0]) || 2026;
+            const m = Number(rawParts[1]) || 1;
+            const d = Number(rawParts[2]) || 1;
+            const dt = new Date(y, m - 1, d);
+            const today = new Date();
+            const isToday = dt.toDateString() === today.toDateString();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+            const isTomorrow = dt.toDateString() === tomorrow.toDateString();
+            const weekday = dt.toLocaleDateString("en-US", { weekday: "short" });
+            const month = dt.toLocaleDateString("en-US", { month: "short" });
+            return {
+              weekday,
+              day: `${d} ${month}`,
+              full: dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
+              isToday,
+              isTomorrow,
+            };
+          };
+
+          const formatSlotTime = (tStr?: string) => {
+            if (!tStr) return "";
+            const rawParts = tStr.split(":");
+            const first = rawParts[0] ?? "";
+            let h = parseInt(first, 10);
+            const m = rawParts[1] ?? "00";
+            if (isNaN(h)) return tStr;
+            const ampm = h >= 12 ? "PM" : "AM";
+            h = h % 12 || 12;
+            return `${h}:${m} ${ampm}`;
+          };
+
+          return (
           <div className="rounded-2xl border border-teal-200 bg-teal-50/40 p-5 space-y-4">
-            {!matchingApp.round1BookedSlot ? (
+            {!matchingApp?.round1BookedSlot ? (
               <>
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-teal-100">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-100 text-teal-800">
+                      <Calendar size={16} />
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-bold text-ink">Schedule Round 1 Assessment</h3>
+                      <p className="text-xs text-ink-muted">
+                        Select an available date & time. Your Round 1 AI questions will be emailed 1 hour before.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold text-teal-800 bg-teal-100/90 px-2.5 py-1 rounded-full">
+                    {availableR1Slots.length} Available Slots
+                  </span>
+                </div>
+
+                {/* Date Selector Tabs */}
                 <div>
-                  <h3 className="text-base font-bold text-ink">Select Your Round 1 Assessment Time Slot</h3>
-                  <p className="text-xs text-ink-muted mt-0.5">
-                    Choose an available date and time below. Your Round 1 assessment button will enable 10 minutes before your scheduled slot.
-                  </p>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted block mb-2">
+                    1. Select Date
+                  </span>
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                    {sortedDates.map((dStr) => {
+                      const info = formatSlotDate(dStr);
+                      const isSelected = activeDate === dStr;
+                      const count = dateMap[dStr]?.length ?? 0;
+                      return (
+                        <button
+                          key={dStr}
+                          type="button"
+                          onClick={() => {
+                            setSelectedR1Date(dStr);
+                            const currentSlot = availableR1Slots.find((s) => s.id === selectedR1SlotId);
+                            if (currentSlot && (currentSlot.date || currentSlot.isoStart?.slice(0, 10)) !== dStr) {
+                              setSelectedR1SlotId("");
+                            }
+                          }}
+                          className={`flex min-w-[105px] flex-col items-center justify-center rounded-xl border px-3 py-2 text-center transition-all cursor-pointer ${
+                            isSelected
+                              ? "border-teal-700 bg-teal-700 text-white shadow-xs"
+                              : "border-teal-200/90 bg-white text-ink hover:border-teal-400 hover:bg-teal-50/50"
+                          }`}
+                        >
+                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isSelected ? "text-teal-100" : "text-ink-muted"}`}>
+                            {info.isToday ? "Today" : info.isTomorrow ? "Tomorrow" : info.weekday}
+                          </span>
+                          <span className="text-sm font-extrabold mt-0.5">{info.day}</span>
+                          <span className={`text-[10px] font-medium mt-0.5 ${isSelected ? "text-teal-100" : "text-teal-700"}`}>
+                            {count} {count === 1 ? "slot" : "slots"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="grid gap-2.5 sm:grid-cols-2">
-                  {matchingApp.round1Slots.map((slot: { id: string; label: string; isoStart: string }) => {
-                    const isPicked = selectedR1SlotId === slot.id;
-                    return (
-                      <button
-                        key={slot.id}
-                        type="button"
-                        onClick={() => setSelectedR1SlotId(slot.id)}
-                        className={`rounded-xl border px-3.5 py-2.5 text-left text-xs font-semibold transition-all cursor-pointer ${
-                          isPicked
-                            ? "border-brand bg-brand/10 text-brand ring-2 ring-brand/20"
-                            : "border-line bg-white text-ink hover:bg-canvas"
-                        }`}
-                      >
-                        {slot.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    disabled={!selectedR1SlotId}
-                    onClick={() => {
-                      const chosen = matchingApp.round1Slots.find((s: any) => s.id === selectedR1SlotId);
-                      if (!chosen) return;
-                      try {
-                        const rawApps = localStorage.getItem("bh_admin_applications");
-                        if (rawApps) {
-                          const apps = JSON.parse(rawApps);
-                          const updated = apps.map((a: any) =>
-                            a.id === matchingApp.id
-                              ? { ...a, stage: "INTERVIEW_SCHEDULED", round1BookedSlot: chosen }
-                              : a
-                          );
-                          localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
-                        }
 
-                        // Mark slot as BOOKED in bh_interview_slots_all
-                        const rawAllSlots = localStorage.getItem("bh_interview_slots_all");
-                        if (rawAllSlots) {
-                          const allSlots = JSON.parse(rawAllSlots);
-                          if (Array.isArray(allSlots)) {
-                            const nextSlots = allSlots.map((s: any) =>
-                              s.id === chosen.id
-                                ? {
-                                    ...s,
-                                    status: "BOOKED",
-                                    bookedCandidateId: matchingApp.id,
-                                    bookedCandidateName: matchingApp.candidateName || "Candidate",
-                                    bookedCandidateEmail: matchingApp.email || me.data?.email,
-                                  }
-                                : s
-                            );
-                            localStorage.setItem("bh_interview_slots_all", JSON.stringify(nextSlots));
-                          }
-                        }
-
-                        // Add to bh_admin_interviews for Dashboard Upcoming Interviews
-                        const rawInts = localStorage.getItem("bh_admin_interviews");
-                        const ints = rawInts ? JSON.parse(rawInts) : [];
-                        if (Array.isArray(ints)) {
-                          const nextInts = [
-                            {
-                              id: `int-r1-${matchingApp.id}`,
-                              roundName: "Round 1: Technical & Architecture Assessment",
-                              candidateName: matchingApp.candidateName || me.data?.displayName || "Candidate",
-                              jobTitle: o.job?.title || matchingApp.jobTitle || "Role",
-                              scheduledAt: chosen.label,
-                              interviewerName: "HR & Assessment Panel",
-                            },
-                            ...ints.filter((i: any) => i.id !== `int-r1-${matchingApp.id}`),
-                          ];
-                          localStorage.setItem("bh_admin_interviews", JSON.stringify(nextInts));
-                        }
-
-                        const rawEv = localStorage.getItem("bh_application_events");
-                        const list = rawEv ? JSON.parse(rawEv) : [];
-                        localStorage.setItem(
-                          "bh_application_events",
-                          JSON.stringify([
-                            {
-                              appId: matchingApp.id,
-                              email: me.data?.email,
-                              jobTitle: o.job?.title,
-                              event: {
-                                id: `ev-r1-slot-${matchingApp.id}-${Date.now()}`,
-                                type: "round1_slot_booked",
-                                createdAt: new Date().toISOString(),
-                                data: { when: chosen.label },
-                              },
-                            },
-                            ...(Array.isArray(list) ? list : []),
-                          ])
+                {/* Time Slots Grid for Active Date */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                      2. Select Time ({activeDate ? formatSlotDate(activeDate).full : ""})
+                    </span>
+                    <span className="flex items-center gap-1 text-[11px] text-ink-muted">
+                      <Clock size={12} /> 60 mins duration
+                    </span>
+                  </div>
+                  {activeSlots.length === 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      No more available slots for this date. Please pick another date above.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                      {activeSlots.map((slot) => {
+                        const isPicked = selectedR1SlotId === slot.id;
+                        const timeLabel = slot.startTime && slot.endTime
+                          ? `${formatSlotTime(slot.startTime)} - ${formatSlotTime(slot.endTime)}`
+                          : slot.label;
+                        return (
+                          <button
+                            key={slot.id}
+                            type="button"
+                            onClick={() => setSelectedR1SlotId(slot.id)}
+                            className={`flex items-center justify-center gap-1.5 rounded-xl border py-2.5 px-3 text-xs font-semibold transition-all cursor-pointer ${
+                              isPicked
+                                ? "border-teal-700 bg-teal-700 text-white shadow-xs ring-2 ring-teal-600/30"
+                                : "border-line bg-white text-ink hover:border-teal-500 hover:bg-teal-50/30"
+                            }`}
+                          >
+                            {isPicked && <Check size={12} className="stroke-[3]" />}
+                            <span>{timeLabel}</span>
+                          </button>
                         );
-                      } catch {}
-                      window.dispatchEvent(new Event("storage"));
-                      window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId: matchingApp.id, stage: "INTERVIEW_SCHEDULED" } }));
-                    }}
-                  >
-                    Confirm Round 1 Slot →
-                  </Button>
+                      })}
+                    </div>
+                  )}
                 </div>
+
+                {/* Selected Slot Confirmation Footer */}
+                {(() => {
+                  const chosen = availableR1Slots.find((s) => s.id === selectedR1SlotId);
+                  const chosenDateInfo = chosen?.date ? formatSlotDate(chosen.date) : null;
+                  const chosenTime = chosen?.startTime ? `${formatSlotTime(chosen.startTime)} - ${formatSlotTime(chosen.endTime)}` : "";
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-teal-100">
+                      <div className="text-xs">
+                        {chosen ? (
+                          <div className="flex items-center gap-2 text-ink">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-teal-100 text-teal-800">
+                              <Check size={12} className="stroke-[3]" />
+                            </span>
+                            <span>
+                              Selected: <strong>{chosenDateInfo?.full}</strong> · <strong>{chosenTime}</strong>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-ink-muted italic">Please choose an examination time slot above to proceed.</span>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        disabled={!selectedR1SlotId}
+                        onClick={() => {
+                          if (!chosen) return;
+                          const formattedLabel = `${chosenDateInfo?.full || chosen.date} · ${chosenTime || chosen.startTime}`;
+                          const slotWithFormattedLabel = { ...chosen, label: formattedLabel };
+
+                          void fetch(`/api/t/${encodeURIComponent(tenant.slug)}/workflow/applications/${encodeURIComponent(appId)}/round1/book-slot`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json", "x-verity-csrf": "1" },
+                            body: JSON.stringify({
+                              slotId: chosen.id,
+                              startsAtIso: chosen.isoStart,
+                              date: chosen.date,
+                              startTime: chosen.startTime,
+                              endTime: chosen.endTime,
+                            }),
+                          }).catch(() => {});
+                          try {
+                            const rawApps = localStorage.getItem("bh_admin_applications");
+                            if (rawApps) {
+                              const apps = JSON.parse(rawApps);
+                              const updated = apps.map((a: any) =>
+                                a.id === appId || a.id === matchingApp?.id
+                                  ? { ...a, stage: "INTERVIEW_SCHEDULED", round1BookedSlot: slotWithFormattedLabel }
+                                  : a
+                              );
+                              localStorage.setItem("bh_admin_applications", JSON.stringify(updated));
+                            }
+
+                            // Mark slot as BOOKED in bh_interview_slots_all
+                            const rawAllSlots = localStorage.getItem("bh_interview_slots_all");
+                            if (rawAllSlots) {
+                              const allSlots = JSON.parse(rawAllSlots);
+                              if (Array.isArray(allSlots)) {
+                                const nextSlots = allSlots.map((s: any) =>
+                                  s.id === chosen.id
+                                    ? {
+                                        ...s,
+                                        status: "BOOKED",
+                                        bookedCandidateId: matchingApp.id,
+                                        bookedCandidateName: matchingApp.candidateName || "Candidate",
+                                        bookedCandidateEmail: matchingApp.email || me.data?.email,
+                                      }
+                                    : s
+                                );
+                                localStorage.setItem("bh_interview_slots_all", JSON.stringify(nextSlots));
+                              }
+                            }
+
+                            // Add to bh_admin_interviews for Dashboard Upcoming Interviews
+                            const rawInts = localStorage.getItem("bh_admin_interviews");
+                            const ints = rawInts ? JSON.parse(rawInts) : [];
+                            if (Array.isArray(ints)) {
+                              const nextInts = [
+                                {
+                                  id: `int-r1-${matchingApp.id}`,
+                                  roundName: "Round 1: Technical & Architecture Assessment",
+                                  candidateName: matchingApp.candidateName || me.data?.displayName || "Candidate",
+                                  jobTitle: o.job?.title || matchingApp.jobTitle || "Role",
+                                  scheduledAt: formattedLabel,
+                                  interviewerName: "HR & Assessment Panel",
+                                },
+                                ...ints.filter((i: any) => i.id !== `int-r1-${matchingApp.id}`),
+                              ];
+                              localStorage.setItem("bh_admin_interviews", JSON.stringify(nextInts));
+                            }
+
+                            const rawEv = localStorage.getItem("bh_application_events");
+                            const list = rawEv ? JSON.parse(rawEv) : [];
+                            localStorage.setItem(
+                              "bh_application_events",
+                              JSON.stringify([
+                                {
+                                  appId: matchingApp.id,
+                                  email: me.data?.email,
+                                  jobTitle: o.job?.title,
+                                  event: {
+                                    id: `ev-r1-slot-${matchingApp.id}-${Date.now()}`,
+                                    type: "round1_slot_booked",
+                                    createdAt: new Date().toISOString(),
+                                    data: { when: formattedLabel },
+                                  },
+                                },
+                                ...(Array.isArray(list) ? list : []),
+                              ])
+                            );
+                          } catch {}
+                          window.dispatchEvent(new Event("storage"));
+                          window.dispatchEvent(new CustomEvent("bh_application_updated", { detail: { appId: matchingApp.id, stage: "INTERVIEW_SCHEDULED" } }));
+                        }}
+                      >
+                        Confirm Round 1 Slot →
+                      </Button>
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               (() => {
@@ -702,7 +954,8 @@ export function OverviewPage() {
               })()
             )}
           </div>
-        )}
+          );
+        })()}
       </section>
 
       <div className="flex flex-wrap items-start gap-6">
